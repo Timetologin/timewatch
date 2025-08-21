@@ -1,13 +1,14 @@
 // server/server.js
 require('dotenv').config();
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
-const attendanceRoutes = require('./routes/attendance.routes'); // ← שים לב לשם הקובץ
+const attendanceRoutes = require('./routes/attendance.routes'); // ← שם הקובץ נכון
 
 // ── ENV
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1/timewatch';
@@ -16,8 +17,8 @@ const PORT = Number(process.env.PORT || 4000);
 // ── APP
 const app = express();
 
-// ── CORS בטוח לפרוד: מקבל רשימת דומיינים מ-ENV (פסיקים)
-// דוגמה: CLIENT_ORIGIN="https://timetologin.space,https://www.timetologin.space"
+// ── CORS: מקבל כמה דומיינים מ-ENV (מופרדים בפסיקים)
+// דוגמה: CLIENT_ORIGIN="https://timewatch-ten.vercel.app,https://timewatch-git-main-timetologins-projects.vercel.app,https://timewatch-j0cokts4i-timetologins-projects.vercel.app"
 const ALLOWED_ORIGINS = (process.env.CLIENT_ORIGIN || '')
   .split(',')
   .map(s => s.trim())
@@ -25,7 +26,7 @@ const ALLOWED_ORIGINS = (process.env.CLIENT_ORIGIN || '')
 
 app.use(cors({
   origin(origin, cb) {
-    // מאפשר כלים בלי Origin (Postman, curl) וגם SSR
+    // מאפשר Postman/cURL/SSR (ללא Origin)
     if (!origin) return cb(null, true);
     if (ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes(origin)) {
       return cb(null, true);
@@ -45,14 +46,21 @@ app.get('/api/health', (_req, res) => {
 // ── API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/attendance', attendanceRoutes); // ← זה המיפוי שחסר/לא נכון אצלך
+app.use('/api/attendance', attendanceRoutes);
 
-// ── Static (Production)
-if (process.env.NODE_ENV === 'production') {
-  const clientBuild = path.join(__dirname, '..', 'client', 'build'); // CRA build
-  app.use(express.static(clientBuild));
-  app.get('*', (_req, res) => res.sendFile(path.join(clientBuild, 'index.html')));
-}
+// ── Static serving של ה-Client רק אם באמת יש build (כדי למנוע ENOENT ב-Render)
+(function maybeServeClient() {
+  const clientBuild = path.join(__dirname, '..', 'client', 'build');
+  const indexHtml = path.join(clientBuild, 'index.html');
+
+  if (fs.existsSync(indexHtml)) {
+    app.use(express.static(clientBuild));
+    app.get('*', (_req, res) => res.sendFile(indexHtml));
+    console.log('Serving client build from', clientBuild);
+  } else {
+    console.log('Client build not found, skipping static serving.');
+  }
+})();
 
 // ── DB + Start
 mongoose
