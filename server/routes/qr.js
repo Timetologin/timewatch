@@ -1,25 +1,24 @@
 // server/routes/qr.js
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/authMiddleware');
+const { authenticate } = require('../middleware/authMiddleware');
 const { withinRadiusMeters } = require('../utils/geo');
-const Attendance = require('../models/Attendance'); // אם לך יש שם אחר לקובץ – עדכן כאן
-const User = require('../models/User');
+const Attendance = require('../models/Attendance');
 
 // מיקום מרכזי מה-ENV (זהה ל-/locations)
 const OFFICE = {
   id: 'main',
   name: process.env.OFFICE_NAME || 'Head Office',
   lat: Number(process.env.OFFICE_LAT || 0),
-  lng: Number(process.env.OFFICE_LNG || 0),
+  lng: Number(process.env.OFFICE_LNG || process.env.OFFICE_LON || 0), // תמיכה גם ב-LON
   radiusMeters: Number(process.env.OFFICE_RADIUS_M || 150)
 };
 
 // כל הראוטים כאן דורשים התחברות
-router.use(auth);
+router.use(authenticate);
 
 // POST /api/qr/clock
-// body: { locationId: 'main', mode: 'in' | 'out' | 'break-start' | 'break-end', coords: { lat, lng } }
+// body: { locationId:'main', mode:'in'|'out'|'break-start'|'break-end', coords:{lat,lng} }
 router.post('/clock', async (req, res) => {
   try {
     const { locationId, mode, coords } = req.body || {};
@@ -30,21 +29,21 @@ router.post('/clock', async (req, res) => {
       return res.status(404).json({ message: 'Location not found' });
     }
 
-    // אימות מיקום
-    const inside = withinRadiusMeters(coords.lat, coords.lng, OFFICE.lat, OFFICE.lng, OFFICE.radiusMeters);
-    if (!inside) {
-      return res.status(403).json({ message: 'You are not at the office location' });
+    // אימות מיקום (אם ATTENDANCE_REQUIRE_OFFICE=1)
+    const mustBeInside = String(process.env.ATTENDANCE_REQUIRE_OFFICE || '0') === '1';
+    if (mustBeInside) {
+      const inside = withinRadiusMeters(coords.lat, coords.lng, OFFICE.lat, OFFICE.lng, OFFICE.radiusMeters);
+      if (!inside) return res.status(403).json({ message: 'You are not at the office location' });
     }
 
     const userId = req.user.id;
+    const today = new Date().toISOString().slice(0,10);
 
-    // בצע פעולה לפי מצב
     if (mode === 'in') {
-      // Clock In רגיל (נשענים על הראוטים/לוגיקה הקיימים שלך אם תרצה)
       const now = new Date();
       const doc = await Attendance.create({
         user: userId,
-        date: now.toISOString().slice(0,10),
+        date: today,
         clockIn: now,
         breaks: [],
         meta: { source: 'qr', coords }
@@ -52,8 +51,7 @@ router.post('/clock', async (req, res) => {
       return res.json({ ok: true, action: 'clockin', attendanceId: doc._id });
     }
 
-    // מצא את הרשומה הפתוחה של היום
-    const today = new Date().toISOString().slice(0,10);
+    // משמרת פתוחה של היום
     const open = await Attendance.findOne({ user: userId, date: today, clockIn: { $ne: null }, clockOut: null });
 
     if (mode === 'out') {
@@ -77,7 +75,7 @@ router.post('/clock', async (req, res) => {
 
     if (mode === 'break-end') {
       if (!open) return res.status(400).json({ message: 'No open shift' });
-      const last = (open.breaks || []).slice(-1)[0];
+      const last = (open.breaks || [])[open.breaks.length - 1];
       if (!last || !last.start || last.end) return res.status(400).json({ message: 'No open break' });
       last.end = new Date();
       open.meta = Object.assign({}, open.meta, { source: 'qr', lastCoords: coords });

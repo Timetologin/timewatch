@@ -1,23 +1,25 @@
 // client/src/pages/Kiosk.js
 import React, { useEffect, useMemo, useState } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
+import { API_BASE } from '../api';
 
 export default function Kiosk() {
   const [location, setLocation] = useState(null);
-  const [mode, setMode] = useState('in'); // 'in' | 'out' | 'break-start' | 'break-end'
+  const [mode, setMode] = useState('in');
   const [now, setNow] = useState(new Date());
 
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
+  useEffect(() => { const t=setInterval(()=>setNow(new Date()),1000); return ()=>clearInterval(t); }, []);
 
   useEffect(() => {
     (async () => {
-      const base = process.env.REACT_APP_API_URL || 'http://localhost:4000';
-      const res = await fetch(`${base}/api/locations`);
-      const data = await res.json();
-      setLocation(data[0]);
+      try {
+        const res = await fetch(`${API_BASE}/api/locations`);
+        if (!res.ok) throw new Error('Failed to load location');
+        const data = await res.json();
+        setLocation(data[0]);
+      } catch (e) {
+        console.error(e);
+      }
     })();
   }, []);
 
@@ -37,7 +39,6 @@ export default function Kiosk() {
 
         <div className="flex flex-wrap items-center justify-center gap-6">
           <div className="p-4 rounded-2xl border bg-slate-50">
-            {/* שימוש נכון בקומפוננטה מהחבילה */}
             <QRCodeCanvas value={url} size={360} includeMargin />
           </div>
 
@@ -46,7 +47,7 @@ export default function Kiosk() {
             <ol className="list-decimal pr-6 space-y-1 text-slate-700">
               <li>פתחו את המצלמה בטלפון (iPhone/Android).</li>
               <li>כוונו אל קוד ה־QR וסכימו לשיתוף מיקום.</li>
-              <li>בצעו {modeLabel(mode)} — חייבים להיות בתוך הרדיוס של המשרד.</li>
+              <li>בצעו את הפעולה הנבחרת — חייבים להיות ברדיוס המשרד.</li>
             </ol>
 
             <div className="mt-6">
@@ -70,21 +71,11 @@ export default function Kiosk() {
             </div>
 
             <div className="mt-6 text-sm text-slate-500">
-              מיקום מאומת בשרת — נדרש להיות בתוך {location?.radiusMeters || '-'} מ׳ מ־{location?.name || '-'}.
+              נדרש להיות בתוך {location?.radiusMeters || '-'} מ׳ מ־{location?.name || '-'} (אם מוגדר אימות מיקום).
             </div>
           </div>
         </div>
       </div>
     </div>
   );
-}
-
-function modeLabel(m) {
-  switch (m) {
-    case 'in': return 'Clock In';
-    case 'out': return 'Clock Out';
-    case 'break-start': return 'Start Break';
-    case 'break-end': return 'End Break';
-    default: return m;
-  }
 }
