@@ -1,11 +1,10 @@
 // server/routes/auth.js
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const router = express.Router();
 const User = require('../models/User');
+const { authenticate, JWT_SECRET } = require('../middleware/authMiddleware');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret';
-const ADMIN_INVITE = process.env.ADMIN_INVITE || '';
+const router = express.Router();
 
 function signToken(user) {
   return jwt.sign(
@@ -18,7 +17,7 @@ function signToken(user) {
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, inviteCode = '' } = req.body || {};
+    const { name, email, password } = req.body || {};
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Missing fields' });
     }
@@ -26,21 +25,13 @@ router.post('/register', async (req, res) => {
     const exists = await User.findOne({ email: String(email).toLowerCase() }).lean();
     if (exists) return res.status(409).json({ message: 'Email already registered' });
 
-    // האם זה המשתמש האדמין הראשון במערכת?
-    const hasAdmin = await User.exists({ role: 'admin' });
-
-    let role = 'user';
-    if (!hasAdmin && ADMIN_INVITE && inviteCode === ADMIN_INVITE) {
-      role = 'admin';
-    }
-
     const user = new User({
       name,
-      email,
-      password,
-      role,
-      permissions: {} // ברירת מחדל; אדמין יקבל הרשאות לפי צורך בהמשך
+      email: String(email).toLowerCase(),
+      role: 'user',
+      permissions: {}
     });
+    await user.setPassword(password);
     await user.save();
 
     const token = signToken(user);
@@ -52,13 +43,7 @@ router.post('/register', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        permissions: {
-          usersManage:       !!user.permissions?.usersManage,
-          attendanceEdit:    !!user.permissions?.attendanceEdit,
-          attendanceReadAll: !!user.permissions?.attendanceReadAll,
-          reportExport:      !!user.permissions?.reportExport,
-          kioskAccess:       !!user.permissions?.kioskAccess,
-        }
+        permissions: user.permissions
       }
     });
   } catch (err) {
@@ -73,7 +58,7 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ message: 'Missing credentials' });
 
-    const user = await User.findOne({ email: String(email).toLowerCase() }).select('+password');
+    const user = await User.findOne({ email: String(email).toLowerCase() });
     if (!user) return res.status(401).json({ message: 'Invalid email or password' });
 
     const ok = await user.comparePassword(password);
@@ -92,13 +77,7 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        permissions: {
-          usersManage:       !!user.permissions?.usersManage,
-          attendanceEdit:    !!user.permissions?.attendanceEdit,
-          attendanceReadAll: !!user.permissions?.attendanceReadAll,
-          reportExport:      !!user.permissions?.reportExport,
-          kioskAccess:       !!user.permissions?.kioskAccess,
-        }
+        permissions: user.permissions
       }
     });
   } catch (err) {
@@ -108,20 +87,9 @@ router.post('/login', async (req, res) => {
 });
 
 // GET /api/auth/me
-router.get('/me', async (req, res) => {
+router.get('/me', authenticate, async (req, res) => {
   try {
-    const auth = req.headers['authorization'];
-    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-    if (!token) return res.status(401).json({ message: 'Missing token' });
-
-    let payload;
-    try {
-      payload = jwt.verify(token, JWT_SECRET);
-    } catch {
-      return res.status(401).json({ message: 'Invalid token' });
-    }
-
-    const u = await User.findById(payload.id).lean();
+    const u = req.userDoc;
     if (!u) return res.status(401).json({ message: 'User not found' });
 
     const me = {
@@ -129,13 +97,7 @@ router.get('/me', async (req, res) => {
       name: u.name,
       email: u.email,
       role: u.role,
-      permissions: {
-        usersManage:       !!u.permissions?.usersManage,
-        attendanceEdit:    !!u.permissions?.attendanceEdit,
-        attendanceReadAll: !!u.permissions?.attendanceReadAll,
-        reportExport:      !!u.permissions?.reportExport,
-        kioskAccess:       !!u.permissions?.kioskAccess,
-      },
+      permissions: u.permissions
     };
 
     return res.json(me);

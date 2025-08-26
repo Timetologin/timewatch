@@ -1,27 +1,27 @@
 // server/routes/admin.js
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/authMiddleware');
+const { authenticate } = require('../middleware/authMiddleware');
 const User = require('../models/User');
 
-// מאפשר כניסה אם role=admin או שיש למשתמש usersManage
+// בדיקת הרשאות: אדמין או מי שיש לו usersManage
 function adminOrUsersManage(req, res, next) {
-  const u = req.user || req.userDoc;
+  const u = req.userDoc;
   if (!u) return res.status(401).json({ message: 'Unauthenticated' });
 
   const isAdmin = u.role === 'admin';
-  const can = !!(req.userDoc && req.userDoc.permissions && req.userDoc.permissions.usersManage);
+  const can = !!u.permissions?.usersManage;
   if (isAdmin || can) return next();
 
   return res.status(403).json({ message: 'Forbidden' });
 }
 
-router.use(auth.authenticate, adminOrUsersManage);
+router.use(authenticate, adminOrUsersManage);
 
 // GET /api/admin - רשימת משתמשים
 router.get('/', async (_req, res) => {
   try {
-    const users = await User.find({}, '-password -__v').lean();
+    const users = await User.find({}, '-passwordHash -__v').lean();
     res.json(users);
   } catch (err) {
     console.error('GET USERS ERROR:', err);
@@ -29,7 +29,7 @@ router.get('/', async (_req, res) => {
   }
 });
 
-// POST /api/admin - יצירה
+// POST /api/admin - יצירת משתמש
 router.post('/', async (req, res) => {
   try {
     const { name, email, password, role = 'user', department = '', active = true, permissions = {} } = req.body || {};
@@ -40,8 +40,7 @@ router.post('/', async (req, res) => {
 
     const user = new User({
       name,
-      email,
-      password,
+      email: String(email).toLowerCase(),
       role: role === 'admin' ? 'admin' : 'user',
       department,
       active: !!active,
@@ -53,10 +52,11 @@ router.post('/', async (req, res) => {
         kioskAccess:       !!permissions.kioskAccess,
       }
     });
+    await user.setPassword(password);
     await user.save();
 
     const out = user.toObject();
-    delete out.password;
+    delete out.passwordHash;
     delete out.__v;
     res.json(out);
   } catch (err) {
@@ -70,13 +70,15 @@ router.put('/:id', async (req, res) => {
   try {
     const { name, password, role, department, active, permissions } = req.body || {};
 
-    const toSet = {};
-    if (name !== undefined) toSet.name = name;
-    if (role !== undefined) toSet.role = role === 'admin' ? 'admin' : 'user';
-    if (department !== undefined) toSet.department = department;
-    if (active !== undefined) toSet.active = !!active;
+    const u = await User.findById(req.params.id);
+    if (!u) return res.status(404).json({ message: 'User not found' });
+
+    if (name !== undefined) u.name = name;
+    if (role !== undefined) u.role = role === 'admin' ? 'admin' : 'user';
+    if (department !== undefined) u.department = department;
+    if (active !== undefined) u.active = !!active;
     if (permissions) {
-      toSet.permissions = {
+      u.permissions = {
         usersManage:       !!permissions.usersManage,
         attendanceReadAll: !!permissions.attendanceReadAll,
         attendanceEdit:    !!permissions.attendanceEdit,
@@ -84,11 +86,15 @@ router.put('/:id', async (req, res) => {
         kioskAccess:       !!permissions.kioskAccess,
       };
     }
-    if (password) toSet.password = String(password);
+    if (password) {
+      await u.setPassword(password);
+    }
 
-    const updated = await User.findByIdAndUpdate(req.params.id, toSet, { new: true, runValidators: true }).select('-password -__v');
-    if (!updated) return res.status(404).json({ message: 'User not found' });
-    res.json(updated);
+    await u.save();
+    const out = u.toObject();
+    delete out.passwordHash;
+    delete out.__v;
+    res.json(out);
   } catch (err) {
     console.error('UPDATE USER ERROR:', err);
     res.status(500).json({ message: 'Server error' });

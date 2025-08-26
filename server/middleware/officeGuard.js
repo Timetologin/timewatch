@@ -1,8 +1,8 @@
 // server/middleware/officeGuard.js
-// שומר תאימות: אם ATTENDANCE_REQUIRE_OFFICE=1 נדרש lat/lng, אחרת עובר.
+// אם ATTENDANCE_REQUIRE_OFFICE=1 נדרש lat/lng בתוך רדיוס המשרד, אחרת עובר.
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const toRad = (x) => (x * Math.PI) / 180;
-  const R = 6371000;
+  const R = 6371000; // רדיוס כדור הארץ במטרים
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
   const a =
@@ -17,7 +17,7 @@ function requireAtOffice(req, res, next) {
 
   const officeLat = Number(process.env.OFFICE_LAT);
   const officeLng = Number(process.env.OFFICE_LNG);
-  const radius = Number(process.env.OFFICE_RADIUS_M || 150);
+  const radius = Number(process.env.OFFICE_RADIUS_METERS || 150);
 
   const { lat, lng } = Object.assign({}, req.body || {}, req.query || {});
   const plat = Number(lat);

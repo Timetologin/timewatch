@@ -1,8 +1,6 @@
 // client/src/api.js
-// Robust API base detection:
-// - REACT_APP_API_URL (if set) wins
-// - Dev: if app runs on :3000 -> talk to backend on :4000
-// - Prod: same-origin (empty base)
+import axios from 'axios';
+
 const explicit = (process.env.REACT_APP_API_URL || '').trim().replace(/\/+$/, '');
 let BASE = explicit;
 if (!BASE) {
@@ -14,38 +12,30 @@ if (!BASE) {
   }
 }
 
-export const API_BASE = BASE;
+export const API_BASE = BASE || 'http://localhost:4000';
 
-function getToken() {
+// axios instance
+export const api = axios.create({
+  baseURL: `${API_BASE}/api`,
+  headers: { 'Content-Type': 'application/json' }
+});
+
+// מוסיף אוטומטית Authorization header
+api.interceptors.request.use((config) => {
   try {
     const auth = JSON.parse(localStorage.getItem('auth') || '{}');
-    return auth?.token || localStorage.getItem('token') || '';
+    const token = auth?.token || localStorage.getItem('token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
   } catch {
-    return localStorage.getItem('token') || '';
+    const token = localStorage.getItem('token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
   }
-}
+  return config;
+});
 
-export async function api(path, options = {}) {
-  const token = getToken();
-  const url = `${API_BASE}${path}`;
-
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    ...options,
-  });
-
-  // Try to parse JSON, but be tolerant to non-JSON error bodies
-  let data = {};
-  const text = await res.text();
-  try { data = text ? JSON.parse(text) : {}; } catch { data = { message: text || '' }; }
-
-  if (!res.ok) {
-    const msg = data?.message || res.statusText || 'Request failed';
-    throw new Error(msg);
-  }
-  return data;
+// מטפל בשגיאות
+export function handleApiError(e) {
+  if (e.response?.data?.message) return e.response.data.message;
+  if (e.message) return e.message;
+  return 'Request failed';
 }

@@ -11,7 +11,7 @@ const OFFICE = {
   name: process.env.OFFICE_NAME || 'Head Office',
   lat: Number(process.env.OFFICE_LAT || 0),
   lng: Number(process.env.OFFICE_LNG || process.env.OFFICE_LON || 0), // תמיכה גם ב-LON
-  radiusMeters: Number(process.env.OFFICE_RADIUS_M || 150)
+  radiusMeters: Number(process.env.OFFICE_RADIUS_METERS || 150)
 };
 
 // כל הראוטים כאן דורשים התחברות
@@ -39,25 +39,30 @@ router.post('/clock', async (req, res) => {
     const userId = req.user.id;
     const today = new Date().toISOString().slice(0,10);
 
+    // CLOCK IN
     if (mode === 'in') {
-      const now = new Date();
-      const doc = await Attendance.create({
-        user: userId,
-        date: today,
-        clockIn: now,
-        breaks: [],
-        meta: { source: 'qr', coords }
-      });
+      let doc = await Attendance.findOne({ user: userId, date: today });
+      if (doc && doc.clockIn && !doc.clockOut) {
+        return res.status(400).json({ message: 'Already clocked in' });
+      }
+      if (!doc) {
+        doc = new Attendance({ user: userId, date: today });
+      }
+      doc.clockIn = new Date();
+      doc.clockOut = undefined;
+      doc.breaks = [];
+      await doc.save();
       return res.json({ ok: true, action: 'clockin', attendanceId: doc._id });
     }
 
-    // משמרת פתוחה של היום
+    // חיפוש משמרת פתוחה של היום
     const open = await Attendance.findOne({ user: userId, date: today, clockIn: { $ne: null }, clockOut: null });
 
     if (mode === 'out') {
       if (!open) return res.status(400).json({ message: 'No open shift' });
+      const last = (open.breaks || [])[open.breaks.length - 1];
+      if (last && last.start && !last.end) last.end = new Date();
       open.clockOut = new Date();
-      open.meta = Object.assign({}, open.meta, { source: 'qr', lastCoords: coords });
       await open.save();
       return res.json({ ok: true, action: 'clockout', attendanceId: open._id });
     }
@@ -68,7 +73,6 @@ router.post('/clock', async (req, res) => {
       if (hasOpenBreak) return res.status(400).json({ message: 'Break already started' });
       open.breaks = open.breaks || [];
       open.breaks.push({ start: new Date() });
-      open.meta = Object.assign({}, open.meta, { source: 'qr', lastCoords: coords });
       await open.save();
       return res.json({ ok: true, action: 'break-start', attendanceId: open._id });
     }
@@ -78,7 +82,6 @@ router.post('/clock', async (req, res) => {
       const last = (open.breaks || [])[open.breaks.length - 1];
       if (!last || !last.start || last.end) return res.status(400).json({ message: 'No open break' });
       last.end = new Date();
-      open.meta = Object.assign({}, open.meta, { source: 'qr', lastCoords: coords });
       await open.save();
       return res.json({ ok: true, action: 'break-end', attendanceId: open._id });
     }
