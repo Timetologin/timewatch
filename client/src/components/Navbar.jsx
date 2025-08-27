@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
-export default function Navbar({ rightSlot = null }) {
+export default function Navbar({ rightSlot = null, onLogout }) {
   const navigate = useNavigate();
   const [me, setMe] = useState(null);
 
@@ -13,45 +13,30 @@ export default function Navbar({ rightSlot = null }) {
       try {
         const { data } = await api.get('/auth/me');
         if (mounted) setMe(data);
-      } catch {
-        // אם אין טוקן/שגיאה — לא מפיל כלום, סתם לא מציג שם
-      }
+      } catch {}
     })();
     return () => { mounted = false; };
   }, []);
 
-  function logout() {
+  const logout = () => {
+    if (onLogout) return onLogout(navigate);
     try { localStorage.removeItem('token'); } catch {}
     navigate('/login', { replace: true });
-  }
+  };
 
   return (
     <div className="navbar">
-      {/* לוגו/כותרת */}
-      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          background: 'linear-gradient(135deg, var(--brand), var(--brand-600))'
-        }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <img src="/logo.png" alt="Costoro Logo" style={{ height: 32, width: 32, borderRadius: 6 }} />
         <strong>Costoro • TimeWatch</strong>
       </div>
 
       <div className="nav-spacer" />
 
-      {/* צד ימין: שם משתמש + Logout + (אופציונלי) Dark Mode */}
-      <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-        {me?.name && (
-          <span className="badge" title={me.email || ''}>
-            {me.name}
-          </span>
-        )}
-
-        {/* אם יש לך קומפוננטה של Dark Mode Toggle – שים אותה כאן: */}
-        {rightSlot /* לדוגמה: <DarkToggle/> */}
-
-        <button className="btn-ghost" onClick={logout}>
-          Logout
-        </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {me?.name && <span className="badge" title={me.email || ''}>{me.name}</span>}
+        {rightSlot}
+        <button className="btn-ghost" onClick={logout}>Logout</button>
       </div>
     </div>
   );

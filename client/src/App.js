@@ -1,5 +1,5 @@
 // client/src/App.js
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
 import UIProvider from './components/UIProvider';
 import Navbar from './components/Navbar';
@@ -8,7 +8,8 @@ import Register from './pages/Register';
 import { api, handleApiError } from './api';
 import toast from 'react-hot-toast';
 
-function Login() {
+// Login מקבל setToken מה-App כדי לעדכן state במקום לחכות לרענון
+function Login({ setToken }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -19,7 +20,10 @@ function Login() {
     setBusy(true);
     try {
       const { data } = await api.post('/auth/login', { email, password });
-      if (data?.token) localStorage.setItem('token', data.token);
+      if (data?.token) {
+        localStorage.setItem('token', data.token);
+        setToken(data.token);            // ← מעדכן state → UI מתרנדר מייד
+      }
       toast.success('Welcome back!');
       navigate('/', { replace: true });
     } catch (err) {
@@ -31,13 +35,14 @@ function Login() {
 
   return (
     <div className="container" style={{ maxWidth: 420, marginTop: 80 }}>
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <img src="/logo.png" alt="Costoro Logo" style={{ height: 80 }} />
+      </div>
+
       <h2 className="h2">Login</h2>
       <p className="muted">Please log in to continue.</p>
 
-      <form
-        onSubmit={submit}
-        style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}
-      >
+      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
         <input
           type="email"
           className="input"
@@ -67,31 +72,39 @@ function Login() {
   );
 }
 
-const authed = () => !!localStorage.getItem('token');
-
 export default function App() {
+  // שומרים את הטוקן ב-state כדי שה־Routes יגיבו מייד לשינוי
+  const [token, setToken] = useState(() => {
+    try { return localStorage.getItem('token'); } catch { return null; }
+  });
+
+  // סנכרון אם טאב אחר עשה login/logout
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'token') setToken(e.newValue);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const authed = useMemo(() => !!token, [token]);
+
+  const doLogout = useCallback((navigate) => {
+    try { localStorage.removeItem('token'); } catch {}
+    setToken(null);
+    navigate('/login', { replace: true });
+  }, []);
+
   return (
     <UIProvider>
       <BrowserRouter>
-        {/* מציגים Navbar רק אחרי התחברות */}
-        {authed() && <Navbar />}
+        {/* Navbar רק כשהמשתמש מחובר; מעבירים onLogout שיסנכרן state */}
+        {authed && <Navbar onLogout={doLogout} />}
 
         <Routes>
-          <Route
-            path="/register"
-            element={authed() ? <Navigate to="/" replace /> : <Register />}
-          />
-
-          <Route
-            path="/login"
-            element={authed() ? <Navigate to="/" replace /> : <Login />}
-          />
-
-          <Route
-            path="/"
-            element={authed() ? <Dashboard /> : <Navigate to="/login" replace />}
-          />
-
+          <Route path="/" element={authed ? <Dashboard /> : <Navigate to="/login" replace />} />
+          <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
+          <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
