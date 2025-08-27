@@ -19,9 +19,9 @@ function Login() {
     setBusy(true);
     try {
       const { data } = await api.post('/auth/login', { email, password });
-      localStorage.setItem('token', data.token);
+      if (data?.token) localStorage.setItem('token', data.token);
       toast.success('Welcome back!');
-      navigate('/');
+      navigate('/', { replace: true });
     } catch (err) {
       toast.error(handleApiError(err));
     } finally {
@@ -34,7 +34,10 @@ function Login() {
       <h2 className="h2">Login</h2>
       <p className="muted">Please log in to continue.</p>
 
-      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
+      <form
+        onSubmit={submit}
+        style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}
+      >
         <input
           type="email"
           className="input"
@@ -70,29 +73,25 @@ export default function App() {
   return (
     <UIProvider>
       <BrowserRouter>
+        {/* מציגים Navbar רק אחרי התחברות */}
+        {authed() && <Navbar />}
+
         <Routes>
-          {/* הרשמה */}
-          <Route path="/register" element={authed() ? <Navigate to="/" replace /> : <Register />} />
-
-          {/* התחברות */}
-          <Route path="/login" element={authed() ? <Navigate to="/" replace /> : <Login />} />
-
-          {/* דשבורד מוגן */}
           <Route
-            path="/"
-            element={
-              authed() ? (
-                <>
-                  <Navbar />
-                  <Dashboard />
-                </>
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            }
+            path="/register"
+            element={authed() ? <Navigate to="/" replace /> : <Register />}
           />
 
-          {/* ברירת מחדל */}
+          <Route
+            path="/login"
+            element={authed() ? <Navigate to="/" replace /> : <Login />}
+          />
+
+          <Route
+            path="/"
+            element={authed() ? <Dashboard /> : <Navigate to="/login" replace />}
+          />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
