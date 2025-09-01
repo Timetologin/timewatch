@@ -1,41 +1,44 @@
 // client/src/api.js
 import axios from 'axios';
+import toast from 'react-hot-toast';
 
-const explicit = (process.env.REACT_APP_API_URL || '').trim().replace(/\/+$/, '');
-let BASE = explicit;
-if (!BASE) {
-  const { protocol, hostname, port } = window.location;
-  if (port === '3000') {
-    BASE = `${protocol}//${hostname}:4000`;
-  } else {
-    BASE = ''; // same-origin (reverse proxy / prod)
-  }
-}
-
-export const API_BASE = BASE || 'http://localhost:4000';
-
-// axios instance
+const BASE = (process.env.REACT_APP_API_URL || '').replace(/\/+$/, '');
 export const api = axios.create({
-  baseURL: `${API_BASE}/api`,
-  headers: { 'Content-Type': 'application/json' }
+  baseURL: BASE ? `${BASE}/api` : '/api',
+  withCredentials: false,
 });
 
-// מוסיף אוטומטית Authorization header
-api.interceptors.request.use((config) => {
-  try {
-    const auth = JSON.parse(localStorage.getItem('auth') || '{}');
-    const token = auth?.token || localStorage.getItem('token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-  } catch {
-    const token = localStorage.getItem('token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+api.interceptors.request.use((cfg) => {
+  const token = localStorage.getItem('token');
+  if (token) cfg.headers.Authorization = `Bearer ${token}`;
+  return cfg;
+});
+
+let redirecting = false;
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const status = err?.response?.status;
+    if (status === 401 || status === 403) {
+      // נקה טוקן ונתב ללוגין בלי להציף טוסטים אינסופיים
+      if (!redirecting) {
+        redirecting = true;
+        try { localStorage.removeItem('token'); } catch {}
+        if (window.location.pathname !== '/login') {
+          toast.error('Session expired. Please log in.');
+          setTimeout(() => { window.location.href = '/login'; }, 150);
+        }
+      }
+    }
+    return Promise.reject(err);
   }
-  return config;
-});
+);
 
-// מטפל בשגיאות
-export function handleApiError(e) {
-  if (e.response?.data?.message) return e.response.data.message;
-  if (e.message) return e.message;
-  return 'Request failed';
+// כלי עזר לשגיאות
+export function handleApiError(err) {
+  return (
+    err?.response?.data?.message ||
+    err?.message ||
+    'Request failed'
+  );
 }
