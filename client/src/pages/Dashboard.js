@@ -5,6 +5,7 @@ import StatsCharts from '../components/StatsCharts';
 import AttendanceTable from '../components/AttendanceTable';
 import { api } from '../api';
 import toast from 'react-hot-toast';
+import BypassBanner from '../components/BypassBanner';
 
 // פורמט לדקות -> "Hh Mm"
 function fmt(mins) {
@@ -102,6 +103,7 @@ export default function Dashboard() {
     <div className="container">
       <h2 className="h2">Dashboard</h2>
       <div className="muted">Overview of attendance and productivity</div>
+      <BypassBanner />
 
       {/* פעולות מהירות */}
       <QuickActions />
