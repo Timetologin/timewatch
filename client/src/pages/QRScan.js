@@ -1,43 +1,56 @@
 // client/src/pages/QRScan.js
 import React, { useEffect, useState } from 'react';
 import { api } from '../api';
+import toast from 'react-hot-toast';
+
+function getParam(name) {
+  const u = new URL(window.location.href);
+  return u.searchParams.get(name);
+}
 
 async function getCoords() {
-  if (!('geolocation' in navigator)) throw new Error('דפדפן לא תומך ב-GPS');
+  if (!('geolocation' in navigator)) throw new Error('Geolocation is not supported');
   return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
-      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      err => reject(new Error('נדרש לאשר שיתוף מיקום')),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      (pos) => resolve({
+        lat: Number(pos.coords.latitude),
+        lng: Number(pos.coords.longitude),
+        accuracy: pos.coords.accuracy,
+      }),
+      (err) => reject(new Error('Please allow location access to continue')),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   });
 }
 
 export default function QRScan() {
-  const [status, setStatus] = useState('טוען…');
+  const [status, setStatus] = useState('Preparing…');
   const [ok, setOk] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     (async () => {
       try {
-        const sp = new URLSearchParams(window.location.search);
-        const locationId = sp.get('loc') || 'main';
-        const mode = sp.get('mode') || 'in';
+        const mode = getParam('m') || 'in';
+        setStatus(`Detecting GPS for "${mode}"…`);
 
-        setStatus('בודק מיקום…');
-        const coords = await getCoords();
+        const pos = await getCoords();
+        setStatus('Contacting server…');
 
-        setStatus('מאמת מול השרת…');
-        const res = await api('/api/qr/clock', {
-          method: 'POST',
-          body: JSON.stringify({ locationId, mode, coords })
-        });
+        const payload = {
+          mode,
+          lat: pos.lat,
+          lng: pos.lng,
+          coords: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy },
+          locationId: 'main',
+        };
 
-        setOk(res);
+        const { data } = await api.post('/qr/clock', payload);
+        setOk({ action: mode, data });
         setStatus('');
+        toast.success(data?.message || `Done: ${mode}`);
       } catch (e) {
-        setError(e.message || 'שגיאה');
+        setError(e?.response?.data?.message || e.message || 'Failed');
         setStatus('');
       }
     })();
@@ -47,19 +60,19 @@ export default function QRScan() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow p-6 text-center">
         <img src="/logo.png" alt="logo" className="w-12 h-12 rounded-md mx-auto mb-3" />
-        <h1 className="text-xl font-bold mb-2">סריקת QR</h1>
+        <h1 className="text-xl font-bold mb-2">QR Scan</h1>
         {status && <div className="text-sm text-slate-600 mb-2">{status}</div>}
 
         {ok && (
           <div className="text-emerald-700">
-            בוצע בהצלחה: <b>{ok.action}</b>
+            Success: <b>{ok.action}</b>
           </div>
         )}
 
         {error && <div className="text-rose-600">{error}</div>}
 
-        <div className="mt-4 text-sm text-slate-500">
-          יש להתחבר קודם במכשיר כדי שהמערכת תזהה אותך.
+        <div className="text-xs text-slate-500 mt-4">
+          If you denied location access, enable it in your browser and retry.
         </div>
       </div>
     </div>

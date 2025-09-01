@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import Register from './pages/Register';
 import { api, handleApiError } from './api';
 import toast from 'react-hot-toast';
+import About from './pages/About'; // ← NEW
 
 // Login מקבל setToken מה-App כדי לעדכן state במקום לחכות לרענון
 function Login({ setToken }) {
@@ -103,6 +104,7 @@ export default function App() {
 
         <Routes>
           <Route path="/" element={authed ? <Dashboard /> : <Navigate to="/login" replace />} />
+          <Route path="/about" element={authed ? <About /> : <Navigate to="/login" replace />} /> {/* NEW */}
           <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
           <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
           <Route path="*" element={<Navigate to="/" replace />} />
