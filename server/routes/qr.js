@@ -22,26 +22,27 @@ const OFFICE = {
   lng: Number(process.env.OFFICE_LNG || 0),
   radius: Number(process.env.OFFICE_RADIUS_METERS || 150),
 };
-
 const mustEnforce = () => String(process.env.ATTENDANCE_REQUIRE_OFFICE || '0') === '1';
-
 const todayStr = (d = new Date()) =>
   new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
-// QR endpoints מוגנים ב-JWT כי העובד כבר מזוהה באפליקציה
+// QR endpoints require auth
 router.use(authenticate);
 
 /**
  * POST /api/qr/clock
- * body: { mode: 'in'|'out'|'break-start'|'break-end', lat, lng, coords?, locationId? }
+ * body: { mode: 'in'|'out'|'break-start'|'break-end', lat, lng, coords? }
  */
 router.post('/clock', async (req, res) => {
   try {
+    const userId = req.user.id;
+    const canBypass = !!req?.userDoc?.permissions?.attendanceBypassLocation;
+
     const { mode, lat, lng, coords } = req.body || {};
     const plat = Number(lat ?? coords?.lat);
     const plng = Number(lng ?? coords?.lng);
 
-    if (mustEnforce()) {
+    if (!canBypass && mustEnforce()) {
       if (!Number.isFinite(plat) || !Number.isFinite(plng)) {
         return res.status(400).json({ message: 'Location required' });
       }
@@ -51,16 +52,12 @@ router.post('/clock', async (req, res) => {
       }
     }
 
-    const userId = req.user.id;
     const date = todayStr();
     let doc = await Attendance.findOne({ user: userId, date });
-
     if (!doc) doc = new Attendance({ user: userId, date });
 
     if (mode === 'in') {
-      if (doc.clockIn && !doc.clockOut) {
-        return res.status(400).json({ message: 'Already clocked in' });
-      }
+      if (doc.clockIn && !doc.clockOut) return res.status(400).json({ message: 'Already clocked in' });
       doc.clockIn = new Date();
       doc.clockOut = undefined;
       doc.breaks = [];
@@ -79,9 +76,7 @@ router.post('/clock', async (req, res) => {
     if (mode === 'break-start') {
       if (!doc.clockIn) return res.status(400).json({ message: 'You need to clock in first' });
       const breaks = Array.isArray(doc.breaks) ? doc.breaks : [];
-      if (breaks.some(b => b.start && !b.end)) {
-        return res.status(400).json({ message: 'Break already started' });
-      }
+      if (breaks.some(b => b.start && !b.end)) return res.status(400).json({ message: 'Break already started' });
       breaks.push({ start: new Date(), end: null });
       doc.breaks = breaks;
       await doc.save();

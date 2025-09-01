@@ -7,9 +7,9 @@ import Dashboard from './pages/Dashboard';
 import Register from './pages/Register';
 import { api, handleApiError } from './api';
 import toast from 'react-hot-toast';
-import About from './pages/About'; // ← NEW
+import About from './pages/About';
+import AdminUsers from './pages/AdminUsers'; // ← NEW
 
-// Login מקבל setToken מה-App כדי לעדכן state במקום לחכות לרענון
 function Login({ setToken }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,7 +23,7 @@ function Login({ setToken }) {
       const { data } = await api.post('/auth/login', { email, password });
       if (data?.token) {
         localStorage.setItem('token', data.token);
-        setToken(data.token);            // ← מעדכן state → UI מתרנדר מייד
+        setToken(data.token);
       }
       toast.success('Welcome back!');
       navigate('/', { replace: true });
@@ -74,16 +74,12 @@ function Login({ setToken }) {
 }
 
 export default function App() {
-  // שומרים את הטוקן ב-state כדי שה־Routes יגיבו מייד לשינוי
   const [token, setToken] = useState(() => {
     try { return localStorage.getItem('token'); } catch { return null; }
   });
 
-  // סנכרון אם טאב אחר עשה login/logout
   useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key === 'token') setToken(e.newValue);
-    };
+    const onStorage = (e) => { if (e.key === 'token') setToken(e.newValue); };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
@@ -99,12 +95,12 @@ export default function App() {
   return (
     <UIProvider>
       <BrowserRouter>
-        {/* Navbar רק כשהמשתמש מחובר; מעבירים onLogout שיסנכרן state */}
         {authed && <Navbar onLogout={doLogout} />}
 
         <Routes>
           <Route path="/" element={authed ? <Dashboard /> : <Navigate to="/login" replace />} />
-          <Route path="/about" element={authed ? <About /> : <Navigate to="/login" replace />} /> {/* NEW */}
+          <Route path="/about" element={authed ? <About /> : <Navigate to="/login" replace />} />
+          <Route path="/admin/users" element={authed ? <AdminUsers /> : <Navigate to="/login" replace />} /> {/* NEW */}
           <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
           <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
           <Route path="*" element={<Navigate to="/" replace />} />

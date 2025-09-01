@@ -4,11 +4,14 @@ const bcrypt = require('bcrypt');
 
 const PermissionsSchema = new mongoose.Schema(
   {
-    usersManage:       { type: Boolean, default: false }, // ניהול משתמשים והרשאות
-    attendanceReadAll: { type: Boolean, default: false }, // צפייה בדוחות של כולם
-    attendanceEdit:    { type: Boolean, default: false }, // עריכת רשומות נוכחות
-    reportExport:      { type: Boolean, default: true  }, // ייצוא CSV/XLSX/PDF
-    kioskAccess:       { type: Boolean, default: false }  // גישה למסך QR/Kiosk
+    usersManage:       { type: Boolean, default: false }, // manage users & permissions
+    attendanceReadAll: { type: Boolean, default: false }, // read everyone reports
+    attendanceEdit:    { type: Boolean, default: false }, // edit attendance rows
+    reportExport:      { type: Boolean, default: true  }, // export CSV/XLSX/PDF
+    kioskAccess:       { type: Boolean, default: false }, // access to Kiosk/QR
+
+    // NEW: allow this user to bypass office location enforcement
+    attendanceBypassLocation: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -42,13 +45,7 @@ UserSchema.pre('save', async function (next) {
 UserSchema.methods.comparePassword = function (candidate) {
   return bcrypt.compare(String(candidate), this.password);
 };
-
-UserSchema.methods.isAdmin = function () {
-  return this.role === 'admin';
-};
-
-UserSchema.methods.hasPermission = function (key) {
-  return !!(this.permissions && this.permissions[key]);
-};
+UserSchema.methods.isAdmin = function () { return this.role === 'admin'; };
+UserSchema.methods.hasPermission = function (key) { return !!(this.permissions && this.permissions[key]); };
 
 module.exports = mongoose.model('User', UserSchema);

@@ -1,115 +1,71 @@
 // server/routes/admin.js
 const express = require('express');
-const router = express.Router();
 const { authenticate } = require('../middleware/authMiddleware');
 const User = require('../models/User');
 
-// בדיקת הרשאות: אדמין או מי שיש לו usersManage
-function adminOrUsersManage(req, res, next) {
-  const u = req.userDoc;
-  if (!u) return res.status(401).json({ message: 'Unauthenticated' });
+const router = express.Router();
+router.use(authenticate);
 
-  const isAdmin = u.role === 'admin';
-  const can = !!u.permissions?.usersManage;
-  if (isAdmin || can) return next();
-
+// guard: only users with usersManage permission
+function ensureUsersManage(req, res, next) {
+  if (req?.userDoc?.permissions?.usersManage) return next();
   return res.status(403).json({ message: 'Forbidden' });
 }
 
-router.use(authenticate, adminOrUsersManage);
-
-// GET /api/admin - רשימת משתמשים
-router.get('/', async (_req, res) => {
+/**
+ * GET /api/admin/users?q=
+ * returns: [{_id, name, email, role, permissions}]
+ */
+router.get('/users', ensureUsersManage, async (req, res) => {
   try {
-    const users = await User.find({}, '-passwordHash -__v').lean();
-    res.json(users);
-  } catch (err) {
-    console.error('GET USERS ERROR:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// POST /api/admin - יצירת משתמש
-router.post('/', async (req, res) => {
-  try {
-    const { name, email, password, role = 'user', department = '', active = true, permissions = {} } = req.body || {};
-    if (!name || !email || !password) return res.status(400).json({ message: 'Missing fields' });
-
-    const exists = await User.findOne({ email: String(email).toLowerCase() }).lean();
-    if (exists) return res.status(409).json({ message: 'Email already exists' });
-
-    const user = new User({
-      name,
-      email: String(email).toLowerCase(),
-      role: role === 'admin' ? 'admin' : 'user',
-      department,
-      active: !!active,
-      permissions: {
-        usersManage:       !!permissions.usersManage,
-        attendanceReadAll: !!permissions.attendanceReadAll,
-        attendanceEdit:    !!permissions.attendanceEdit,
-        reportExport:      permissions.reportExport === undefined ? true : !!permissions.reportExport,
-        kioskAccess:       !!permissions.kioskAccess,
-      }
-    });
-    await user.setPassword(password);
-    await user.save();
-
-    const out = user.toObject();
-    delete out.passwordHash;
-    delete out.__v;
-    res.json(out);
-  } catch (err) {
-    console.error('CREATE USER ERROR:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// PUT /api/admin/:id - עדכון
-router.put('/:id', async (req, res) => {
-  try {
-    const { name, password, role, department, active, permissions } = req.body || {};
-
-    const u = await User.findById(req.params.id);
-    if (!u) return res.status(404).json({ message: 'User not found' });
-
-    if (name !== undefined) u.name = name;
-    if (role !== undefined) u.role = role === 'admin' ? 'admin' : 'user';
-    if (department !== undefined) u.department = department;
-    if (active !== undefined) u.active = !!active;
-    if (permissions) {
-      u.permissions = {
-        usersManage:       !!permissions.usersManage,
-        attendanceReadAll: !!permissions.attendanceReadAll,
-        attendanceEdit:    !!permissions.attendanceEdit,
-        reportExport:      permissions.reportExport === undefined ? true : !!permissions.reportExport,
-        kioskAccess:       !!permissions.kioskAccess,
-      };
+    const q = (req.query.q || '').trim();
+    const find = {};
+    if (q) {
+      find.$or = [
+        { name: new RegExp(q, 'i') },
+        { email: new RegExp(q, 'i') },
+      ];
     }
-    if (password) {
-      await u.setPassword(password);
+    const users = await User.find(find, { name:1, email:1, role:1, permissions:1 }).sort({ createdAt: -1 });
+    res.json({ users });
+  } catch (e) {
+    res.status(500).json({ message: e.message || 'Failed to load users' });
+  }
+});
+
+/**
+ * PATCH /api/admin/users/:id/permissions
+ * body: { permissions: { usersManage?, attendanceEdit?, attendanceReadAll?, reportExport?, kioskAccess?, attendanceBypassLocation? } }
+ */
+router.patch('/users/:id/permissions', ensureUsersManage, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const patch = req.body?.permissions || {};
+
+    const allowed = [
+      'usersManage',
+      'attendanceEdit',
+      'attendanceReadAll',
+      'reportExport',
+      'kioskAccess',
+      'attendanceBypassLocation', // NEW
+    ];
+
+    const $set = {};
+    for (const k of allowed) {
+      if (k in patch) $set[`permissions.${k}`] = !!patch[k];
     }
 
-    await u.save();
-    const out = u.toObject();
-    delete out.passwordHash;
-    delete out.__v;
-    res.json(out);
-  } catch (err) {
-    console.error('UPDATE USER ERROR:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+    const user = await User.findByIdAndUpdate(
+      id,
+      { $set },
+      { new: true, fields: { name:1, email:1, role:1, permissions:1 } }
+    );
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
-// DELETE /api/admin/:id - מחיקה
-router.delete('/:id', async (req, res) => {
-  try {
-    const deleted = await User.findByIdAndDelete(req.params.id);
-    if (!deleted) return res.status(404).json({ message: 'User not found' });
-    res.json({ message: 'User deleted' });
-  } catch (err) {
-    console.error('DELETE USER ERROR:', err);
-    res.status(500).json({ message: 'Server error' });
+    res.json({ ok: true, user });
+  } catch (e) {
+    res.status(500).json({ message: e.message || 'Failed to update permissions' });
   }
 });
 

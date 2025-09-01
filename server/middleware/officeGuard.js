@@ -19,11 +19,14 @@ const OFFICE = {
 
 function requireAtOffice(req, res, next) {
   const must = String(process.env.ATTENDANCE_REQUIRE_OFFICE || '0') === '1';
+
+  // ✅ Bypass for users with explicit permission
+  const bypass = !!req?.userDoc?.permissions?.attendanceBypassLocation;
+  if (bypass) return next();
   if (!must) return next();
 
   const lat = Number(req.body?.lat ?? req.body?.coords?.lat);
   const lng = Number(req.body?.lng ?? req.body?.coords?.lng);
-
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return res.status(400).json({ message: 'Location required' });
   }
