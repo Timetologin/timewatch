@@ -10,7 +10,7 @@ const PERM_LIST = [
   ['attendanceEdit', 'Attendance edit'],
   ['reportExport', 'Report export'],
   ['kioskAccess', 'Kiosk access'],
-  ['attendanceBypassLocation', 'Bypass location'],
+  ['attendanceBypassLocation', 'Bypass location'], // ← הרשאת עקיפת מיקום
 ];
 
 export default function AdminUsers() {
@@ -21,7 +21,7 @@ export default function AdminUsers() {
   const [busy, setBusy] = useState(false);
   const [showNew, setShowNew] = useState(false);
 
-  // טופס יצירת משתמש – תוספת חדשה (לא מחליף כלום)
+  // טופס יצירה (תוספת, לא מוחק כלום)
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -96,7 +96,6 @@ export default function AdminUsers() {
   return (
     <div className="container">
       <h2 className="h2">Users</h2>
-      <p className="muted">Manage roles & permissions.</p>
 
       <div style={{ display:'flex', gap:8, margin:'12px 0 16px' }}>
         <input
@@ -110,14 +109,11 @@ export default function AdminUsers() {
         <button className="btn" onClick={load} disabled={busy}>
           {busy ? 'Loading…' : 'Search'}
         </button>
-
-        {/* תוספת: כפתור יצירת משתמש חדש */}
         <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setShowNew(v => !v)}>
           {showNew ? 'Close' : 'New user'}
         </button>
       </div>
 
-      {/* טופס יצירת משתמש – חדש, לא מחליף את טבלת ההרשאות */}
       {showNew && (
         <div className="card" style={{ marginBottom: 12 }}>
           <div className="grid-2">
@@ -169,7 +165,7 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* טבלת ההרשאות (הקיימת אצלך) – נשארת + שיפורים קלים */}
+      {/* טבלת הרשאות למשתמשים קיימים */}
       <div className="card" style={{ overflowX: 'auto' }}>
         <table className="table">
           <thead>
