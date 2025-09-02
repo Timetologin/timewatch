@@ -7,7 +7,6 @@ const { authenticate } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// משתמשים ב-ENV ישירות (לא תלוי ב-export מ-authMiddleware)
 const JWT_SECRET = process.env.JWT_SECRET || 'YOUR_SECRET_KEY';
 const TOKEN_TTL = '30d';
 
@@ -19,7 +18,9 @@ function signToken(user) {
   );
 }
 
-// POST /api/auth/register
+/** POST /api/auth/register
+ *  שים לב: לא עושים כאן hash. נותנים ל-pre('save') במודל לעשות hash פעם אחת.
+ */
 router.post('/register', async (req, res) => {
   try {
     const { name = '', email = '', password = '' } = req.body || {};
@@ -35,18 +36,11 @@ router.post('/register', async (req, res) => {
       name: String(name).trim(),
       email: normEmail,
       role: 'user',
-      permissions: {}
+      permissions: {},
+      password,                 // ← ללא hash כאן
     });
 
-    // תמיכה בשתי גרסאות המודל: setPassword() או האש כאן
-    if (typeof user.setPassword === 'function') {
-      await user.setPassword(password);
-    } else {
-      const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(String(password), salt);
-    }
-
-    await user.save();
+    await user.save();          // ה-pre('save') במודל יבצע hash פעם אחת
     const token = signToken(user);
 
     return res.json({
@@ -65,18 +59,18 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// POST /api/auth/login
+/** POST /api/auth/login */
 router.post('/login', async (req, res) => {
   try {
     const { email = '', password = '' } = req.body || {};
     if (!email.trim() || !password) return res.status(400).json({ message: 'Missing credentials' });
 
     const normEmail = String(email).toLowerCase().trim();
-    // אם במודל שלך password עם select: false – שנה ל: .select('+password')
-    const user = await User.findOne({ email: normEmail });
+    // נוודא שהסיסמה מגיעה מהדאטהבייס גם אם הוגדר select:false במודל
+    const user = await User.findOne({ email: normEmail }).select('+password');
     if (!user) return res.status(401).json({ message: 'Invalid email or password' });
 
-    // תמיכה בשתי גרסאות המודל: comparePassword() או bcrypt כאן
+    // אם קיימת מתודת comparePassword במודל – נשתמש בה, אחרת bcrypt כאן
     let ok = false;
     if (typeof user.comparePassword === 'function') {
       ok = await user.comparePassword(password);
@@ -107,8 +101,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// GET /api/auth/me
-// משתמשים ב-authenticate כדי לקבל req.userDoc מלא (כולל permissions)
+/** GET /api/auth/me */
 router.get('/me', authenticate, async (req, res) => {
   try {
     const u = req.userDoc;
@@ -127,9 +120,8 @@ router.get('/me', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/auth/logout
+/** POST /api/auth/logout */
 router.post('/logout', async (_req, res) => {
-  // בצד הלקוח רק מנקים טוקן; כאן מחזירים OK לסגירת לולאה
   res.json({ ok: true });
 });
 
