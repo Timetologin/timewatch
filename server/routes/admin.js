@@ -5,6 +5,7 @@ const User = require('../models/User');
 
 const router = express.Router();
 
+/* ---------- Guards ---------- */
 // כל הראוטים כאן דורשים התחברות
 router.use(authenticate);
 
@@ -14,14 +15,14 @@ function ensureUsersManage(req, res, next) {
   return res.status(403).json({ message: 'Forbidden' });
 }
 
-// מפתחות הרשאה שמותר לגעת בהם
+/* ---------- Helpers ---------- */
 const PERM_KEYS = [
   'usersManage',
   'attendanceEdit',
   'attendanceReadAll',
   'reportExport',
   'kioskAccess',
-  'attendanceBypassLocation', // ⬅ כולל עקיפת מיקום
+  'attendanceBypassLocation', // עקיפת מיקום
 ];
 
 const normEmail = (e) => String(e || '').trim().toLowerCase();
@@ -39,7 +40,7 @@ const sanitize = (u) => ({
 
 /* ===========================
    GET /api/admin/users
-   רשימת משתמשים (עם חיפוש חופשי)
+   רשימת משתמשים (עם חיפוש)
    =========================== */
 router.get('/users', ensureUsersManage, async (req, res) => {
   try {
@@ -51,6 +52,7 @@ router.get('/users', ensureUsersManage, async (req, res) => {
     const users = await User.find(find, {
       name: 1, email: 1, role: 1, department: 1, active: 1, permissions: 1, createdAt: 1,
     }).sort({ createdAt: -1 });
+
     res.json({ users: users.map(sanitize) });
   } catch (e) {
     res.status(500).json({ message: e.message || 'Failed to load users' });
@@ -59,14 +61,18 @@ router.get('/users', ensureUsersManage, async (req, res) => {
 
 /* ===========================
    POST /api/admin/users
-   יצירת משתמש חדש מהטופס "New user"
+   יצירת משתמש חדש
    body: { name, email, password, role, department, active, permissions }
    =========================== */
 router.post('/users', ensureUsersManage, async (req, res) => {
   try {
     const {
-      name = '', email = '', password = '',
-      role = 'user', department = '', active = true,
+      name = '',
+      email = '',
+      password = '',
+      role = 'user',
+      department = '',
+      active = true,
       permissions = {},
     } = req.body || {};
 
@@ -78,11 +84,11 @@ router.post('/users', ensureUsersManage, async (req, res) => {
     const exists = await User.findOne({ email: emailNorm }).lean();
     if (exists) return res.status(409).json({ message: 'Email already exists' });
 
-    // מרכיבים permission object רק מהמפתחות המותרים
+    // מרכיבים הרשאות רק מהמפתחות המותרים
     const perms = {};
     for (const k of PERM_KEYS) if (k in (permissions || {})) perms[k] = !!permissions[k];
 
-    // שים לב: password גולמי – המודל יעשה hash ב-pre('save')
+    // password גולמי — המודל יעשה hash ב-pre('save')
     const u = new User({
       name: String(name).trim(),
       email: emailNorm,
@@ -102,7 +108,7 @@ router.post('/users', ensureUsersManage, async (req, res) => {
 
 /* ===========================
    PATCH /api/admin/users/:id
-   עדכון פרטי משתמש (שם/אימייל/תפקיד/מחלקה/סטטוס/סיסמה/הרשאות)
+   עדכון פרטי משתמש (כולל סיסמה/הרשאות)
    body: כל השדות אופציונליים
    =========================== */
 router.patch('/users/:id', ensureUsersManage, async (req, res) => {
@@ -122,7 +128,7 @@ router.patch('/users/:id', ensureUsersManage, async (req, res) => {
     if (typeof active === 'boolean') user.active = active;
 
     if (password != null && String(password).trim()) {
-      // המודל יעשה hash אוטומטית ב-pre('save')
+      // המודל יבצע hash אוטומטי ב-pre('save')
       user.password = String(password);
     }
 
@@ -143,7 +149,7 @@ router.patch('/users/:id', ensureUsersManage, async (req, res) => {
 
 /* ===========================
    PATCH /api/admin/users/:id/permissions
-   עדכון הרשאות בלבד (תואם לקליינט הישן)
+   עדכון הרשאות בלבד (תאימות לקליינט הישן)
    =========================== */
 router.patch('/users/:id/permissions', ensureUsersManage, async (req, res) => {
   try {
@@ -159,6 +165,11 @@ router.patch('/users/:id/permissions', ensureUsersManage, async (req, res) => {
       { new: true, fields: { name: 1, email: 1, role: 1, department: 1, active: 1, permissions: 1, createdAt: 1 } }
     );
     if (!user) return res.status(404).json({ message: 'User not found' });
+
     res.json({ ok: true, user: sanitize(user) });
   } catch (e) {
-    res.status(500).json({
+    res.status(500).json({ message: e.message || 'Failed to update permissions' });
+  }
+});
+
+module.exports = router;
