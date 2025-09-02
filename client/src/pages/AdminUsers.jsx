@@ -4,21 +4,40 @@ import { api } from '../api';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
-const PERM_KEYS = [
+const PERM_LIST = [
   ['usersManage', 'Users manage'],
-  ['attendanceEdit', 'Attendance edit'],
   ['attendanceReadAll', 'Attendance read all'],
+  ['attendanceEdit', 'Attendance edit'],
   ['reportExport', 'Report export'],
   ['kioskAccess', 'Kiosk access'],
-  ['attendanceBypassLocation', 'Bypass location'], // NEW
+  ['attendanceBypassLocation', 'Bypass location'],
 ];
 
 export default function AdminUsers() {
+  const navigate = useNavigate();
   const [me, setMe] = useState(null);
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
-  const navigate = useNavigate();
+  const [showNew, setShowNew] = useState(false);
+
+  // טופס יצירת משתמש – תוספת חדשה (לא מחליף כלום)
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'user',
+    department: '',
+    active: true,
+    permissions: {
+      usersManage: false,
+      attendanceReadAll: false,
+      attendanceEdit: false,
+      reportExport: true,
+      kioskAccess: false,
+      attendanceBypassLocation: false,
+    }
+  });
 
   useEffect(() => {
     (async () => {
@@ -31,7 +50,7 @@ export default function AdminUsers() {
           return;
         }
         await load();
-      } catch (e) {
+      } catch {
         toast.error('Failed to load');
       }
     })();
@@ -41,16 +60,38 @@ export default function AdminUsers() {
   const load = async () => {
     setBusy(true);
     try {
-      const { data } = await api.get('/admin/users', { params: { q } });
-      setRows(data?.users || []);
+      const { data } = await api.get('/admin/users', { params: { q, limit: 200 } });
+      const list = data?.users || data?.items || [];
+      setRows(list);
     } catch (e) {
-      toast.error('Failed to load users');
+      toast.error(e?.response?.data?.message || 'Failed to load users');
     } finally {
       setBusy(false);
     }
   };
 
   const filtered = useMemo(() => rows, [rows]);
+
+  const togglePermInForm = (key) => {
+    setForm(f => ({ ...f, permissions: { ...f.permissions, [key]: !f.permissions[key] } }));
+  };
+
+  const createUser = async () => {
+    try {
+      if (!form.name.trim() || !form.email.trim() || !form.password.trim()) {
+        toast.error('Name, email and password are required');
+        return;
+      }
+      const payload = { ...form, email: form.email.trim().toLowerCase() };
+      await api.post('/admin/users', payload);
+      toast.success('User created');
+      setShowNew(false);
+      setForm(f => ({ ...f, name: '', email: '', password: '' }));
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Create failed');
+    }
+  };
 
   return (
     <div className="container">
@@ -66,23 +107,90 @@ export default function AdminUsers() {
           onKeyDown={(e)=>{ if(e.key==='Enter') load(); }}
           style={{ maxWidth: 320 }}
         />
-        <button className="btn" onClick={load} disabled={busy}>{busy ? 'Loading…' : 'Search'}</button>
+        <button className="btn" onClick={load} disabled={busy}>
+          {busy ? 'Loading…' : 'Search'}
+        </button>
+
+        {/* תוספת: כפתור יצירת משתמש חדש */}
+        <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => setShowNew(v => !v)}>
+          {showNew ? 'Close' : 'New user'}
+        </button>
       </div>
 
+      {/* טופס יצירת משתמש – חדש, לא מחליף את טבלת ההרשאות */}
+      {showNew && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div className="grid-2">
+            <div>
+              <label className="muted">Name</label>
+              <input className="input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="muted">Email</label>
+              <input className="input" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+            </div>
+            <div>
+              <label className="muted">Password</label>
+              <input className="input" type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+            </div>
+            <div>
+              <label className="muted">Role</label>
+              <select className="input" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div>
+              <label className="muted">Department</label>
+              <input className="input" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} />
+            </div>
+            <div>
+              <label className="muted">Active</label><br />
+              <input type="checkbox" checked={form.active} onChange={e => setForm({ ...form, active: e.target.checked })} />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <div className="muted" style={{ marginBottom: 6 }}>Permissions</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              {PERM_LIST.map(([k, label]) => (
+                <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <input type="checkbox" checked={!!form.permissions[k]} onChange={() => togglePermInForm(k)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <button className="btn-ghost" onClick={() => setShowNew(false)}>Cancel</button>
+            <button className="btn" onClick={createUser}>Create</button>
+          </div>
+        </div>
+      )}
+
+      {/* טבלת ההרשאות (הקיימת אצלך) – נשארת + שיפורים קלים */}
       <div className="card" style={{ overflowX: 'auto' }}>
         <table className="table">
           <thead>
             <tr>
-              <th style={{ minWidth: 200 }}>Name</th>
-              <th style={{ minWidth: 260 }}>Email</th>
-              {PERM_KEYS.map(([key,label]) => <th key={key}>{label}</th>)}
+              <th style={{ minWidth: 180 }}>Name</th>
+              <th style={{ minWidth: 220 }}>Email</th>
+              <th>Role</th>
+              <th>Active</th>
+              <th>Dept</th>
+              {PERM_LIST.map(([key,label]) => <th key={key}>{label}</th>)}
               <th>Save</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map(u => (
-              <UserRow key={u._id || u.id} user={u} onSaved={load} />
-            ))}
+            {filtered.length === 0 ? (
+              <tr><td className="muted" colSpan={5 + PERM_LIST.length + 1}>No users</td></tr>
+            ) : (
+              filtered.map(u => (
+                <UserRow key={u.id || u._id} user={u} onSaved={load} />
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -92,15 +200,15 @@ export default function AdminUsers() {
 
 function UserRow({ user, onSaved }) {
   const [perms, setPerms] = useState(user.permissions || {});
-  useEffect(()=>{ setPerms(user.permissions || {}); }, [user]);
+  useEffect(() => { setPerms(user.permissions || {}); }, [user]);
 
   const save = async () => {
     try {
-      await api.patch(`/admin/users/${user._id || user.id}/permissions`, { permissions: perms });
+      await api.patch(`/admin/users/${user.id || user._id}/permissions`, { permissions: perms });
+      toast.success('Saved');
       onSaved?.();
     } catch (e) {
-      // toast תוסף קיים בפרויקט; אם תרצה אפשר להוסיף כאן
-      console.error(e);
+      toast.error(e?.response?.data?.message || 'Save failed');
     }
   };
 
@@ -108,7 +216,10 @@ function UserRow({ user, onSaved }) {
     <tr>
       <td>{user.name || '-'}</td>
       <td>{user.email}</td>
-      {PERM_KEYS.map(([key]) => (
+      <td>{user.role}</td>
+      <td>{user.active ? 'Yes' : 'No'}</td>
+      <td>{user.department || '-'}</td>
+      {PERM_LIST.map(([key]) => (
         <td key={key}>
           <input
             type="checkbox"

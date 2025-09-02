@@ -5,11 +5,10 @@ const User = require('../models/User');
 
 const router = express.Router();
 
-/* ---------- Guards ---------- */
-// כל הראוטים כאן דורשים התחברות
+/* ---------- Guard: כל הראוטים כאן דורשים התחברות ---------- */
 router.use(authenticate);
 
-// רק למי שיש הרשאת usersManage
+// רק למשתמשים עם הרשאת usersManage
 function ensureUsersManage(req, res, next) {
   if (req?.userDoc?.permissions?.usersManage) return next();
   return res.status(403).json({ message: 'Forbidden' });
@@ -38,32 +37,40 @@ const sanitize = (u) => ({
   createdAt: u.createdAt,
 });
 
-/* ===========================
-   GET /api/admin/users
-   רשימת משתמשים (עם חיפוש)
-   =========================== */
+/* =========================================================================
+   GET /api/admin/users?q=&page=&limit=
+   מחזיר רשימת משתמשים. תאימות: מחזיר גם users וגם items + total.
+========================================================================= */
 router.get('/users', ensureUsersManage, async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
-    const find = {};
-    if (q) {
-      find.$or = [{ name: new RegExp(q, 'i') }, { email: new RegExp(q, 'i') }];
-    }
-    const users = await User.find(find, {
-      name: 1, email: 1, role: 1, department: 1, active: 1, permissions: 1, createdAt: 1,
-    }).sort({ createdAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page || '1', 10));
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit || '200', 10)));
 
-    res.json({ users: users.map(sanitize) });
+    const find = {};
+    if (q) find.$or = [{ name: new RegExp(q, 'i') }, { email: new RegExp(q, 'i') }];
+
+    const [rows, total] = await Promise.all([
+      User.find(find)
+        .select('name email role department active permissions createdAt')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      User.countDocuments(find),
+    ]);
+
+    const items = rows.map(sanitize);
+    res.json({ users: items, items, total, page, limit });
   } catch (e) {
     res.status(500).json({ message: e.message || 'Failed to load users' });
   }
 });
 
-/* ===========================
+/* =========================================================================
    POST /api/admin/users
-   יצירת משתמש חדש
-   body: { name, email, password, role, department, active, permissions }
-   =========================== */
+   יצירת משתמש חדש (המודל מבצע hash לסיסמה ב-pre('save'))
+========================================================================= */
 router.post('/users', ensureUsersManage, async (req, res) => {
   try {
     const {
@@ -84,15 +91,13 @@ router.post('/users', ensureUsersManage, async (req, res) => {
     const exists = await User.findOne({ email: emailNorm }).lean();
     if (exists) return res.status(409).json({ message: 'Email already exists' });
 
-    // מרכיבים הרשאות רק מהמפתחות המותרים
     const perms = {};
     for (const k of PERM_KEYS) if (k in (permissions || {})) perms[k] = !!permissions[k];
 
-    // password גולמי — המודל יעשה hash ב-pre('save')
     const u = new User({
       name: String(name).trim(),
       email: emailNorm,
-      password: String(password),
+      password: String(password), // raw; model will hash
       role: String(role) || 'user',
       department: String(department || ''),
       active: !!active,
@@ -106,11 +111,10 @@ router.post('/users', ensureUsersManage, async (req, res) => {
   }
 });
 
-/* ===========================
+/* =========================================================================
    PATCH /api/admin/users/:id
-   עדכון פרטי משתמש (כולל סיסמה/הרשאות)
-   body: כל השדות אופציונליים
-   =========================== */
+   עדכון פרטי משתמש (כולל סיסמה/הרשאות). כל השדות אופציונליים.
+========================================================================= */
 router.patch('/users/:id', ensureUsersManage, async (req, res) => {
   try {
     const { id } = req.params;
@@ -128,15 +132,12 @@ router.patch('/users/:id', ensureUsersManage, async (req, res) => {
     if (typeof active === 'boolean') user.active = active;
 
     if (password != null && String(password).trim()) {
-      // המודל יבצע hash אוטומטי ב-pre('save')
-      user.password = String(password);
+      user.password = String(password); // model will hash
     }
 
     if (permissions != null && typeof permissions === 'object') {
       const perms = { ...(user.permissions || {}) };
-      for (const k of PERM_KEYS) {
-        if (k in permissions) perms[k] = !!permissions[k];
-      }
+      for (const k of PERM_KEYS) if (k in permissions) perms[k] = !!permissions[k];
       user.permissions = perms;
     }
 
@@ -147,26 +148,24 @@ router.patch('/users/:id', ensureUsersManage, async (req, res) => {
   }
 });
 
-/* ===========================
+/* =========================================================================
    PATCH /api/admin/users/:id/permissions
-   עדכון הרשאות בלבד (תאימות לקליינט הישן)
-   =========================== */
+   עדכון הרשאות בלבד (לשימור תאימות)
+========================================================================= */
 router.patch('/users/:id/permissions', ensureUsersManage, async (req, res) => {
   try {
     const { id } = req.params;
     const patch = req.body?.permissions || {};
     const $set = {};
-    for (const k of PERM_KEYS) {
-      if (k in patch) $set[`permissions.${k}`] = !!patch[k];
-    }
-    const user = await User.findByIdAndUpdate(
-      id,
-      { $set },
-      { new: true, fields: { name: 1, email: 1, role: 1, department: 1, active: 1, permissions: 1, createdAt: 1 } }
-    );
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    for (const k of PERM_KEYS) if (k in patch) $set[`permissions.${k}`] = !!patch[k];
 
-    res.json({ ok: true, user: sanitize(user) });
+    const updated = await User.findByIdAndUpdate(id, { $set }, { new: true })
+      .select('name email role department active permissions createdAt')
+      .lean();
+    if (!updated) return res.status(404).json({ message: 'User not found' });
+
+    const clean = sanitize(updated);
+    res.json({ ok: true, user: clean });
   } catch (e) {
     res.status(500).json({ message: e.message || 'Failed to update permissions' });
   }
