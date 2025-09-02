@@ -1,32 +1,26 @@
 // server/server.js
 require('dotenv').config();
+
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-
-// ── Security & Utils
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 
-// Routes
-const authRoutes = require('./routes/auth');
-const adminRoutes = require('./routes/admin');
-const attendanceRoutes = require('./routes/attendance.routes'); // נשאר כמו אצלך
-const qrRoutes = require('./routes/qr');
-const locationsRoutes = require('./routes/locations');
-
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1/timewatch';
-const PORT = Number(process.env.PORT || 4000);
-
 const app = express();
 
-// אם רץ מאחורי פרוקסי (Render/Nginx/Cloudflare) – שנקבל IP אמיתי
+/* ---------- Config ---------- */
+const PORT = Number(process.env.PORT || 4000);
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1/timewatch';
+
+// מקבלים IP אמיתי מאחורי פרוקסי (Render/CF)
 app.set('trust proxy', 1);
 
-// ── CORS: אם לא הוגדר CLIENT_ORIGIN → נאשר הכל
+/* ---------- CORS ---------- */
+// CLIENT_ORIGIN יכול להכיל כמה דומיינים מופרדים בפסיק
 const ALLOWED_ORIGINS = (process.env.CLIENT_ORIGIN || '')
   .split(',')
   .map(s => s.trim())
@@ -34,52 +28,54 @@ const ALLOWED_ORIGINS = (process.env.CLIENT_ORIGIN || '')
 
 app.use(cors({
   origin(origin, cb) {
-    if (!origin) return cb(null, true); // Postman/SSR
+    // מאפשרים ללא Origin (Postman/Server-to-Server)
+    if (!origin) return cb(null, true);
     if (
       ALLOWED_ORIGINS.length === 0 ||
       ALLOWED_ORIGINS.includes('*') ||
       ALLOWED_ORIGINS.includes(origin)
-    ) {
-      return cb(null, true);
-    }
+    ) return cb(null, true);
     return cb(new Error('CORS blocked: ' + origin));
   },
-  credentials: true
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 }));
 
-// ── אבטחה
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' }
-}));
-
-// ── Rate limiting
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
-  standardHeaders: true,
-  legacyHeaders: false
-}));
-
-// ── לוגים
-app.use(morgan('combined'));
-
-// ── Body
+/* ---------- Security / Logs / Body ---------- */
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
+app.use(morgan('tiny'));
 app.use(express.json({ limit: '1mb' }));
 
-// ── בריאות
+/* ---------- Health ---------- */
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, time: new Date().toISOString() });
+  res.json({ ok: true, ts: new Date().toISOString() });
 });
 
-// ── API
+/* ---------- Routes ---------- */
+const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
+
+// הטענות אופציונליות כדי למנוע קריסה אם קובץ לא קיים:
+let attendanceRoutes;
+try { attendanceRoutes = require('./routes/attendance.routes'); }
+catch { attendanceRoutes = express.Router(); }
+
+const qrRoutes = require('./routes/qr');
+
+let locationsRoutes;
+try { locationsRoutes = require('./routes/locations'); }
+catch { locationsRoutes = express.Router(); }
+
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/locations', locationsRoutes);
 
-// ── הגשת build של לקוח אם קיים
-(function maybeServeClient() {
+/* ---------- Serve client build if exists ---------- */
+(function serveClientIfExists() {
   const clientBuild = path.join(__dirname, '..', 'client', 'build');
   const indexHtml = path.join(clientBuild, 'index.html');
   if (fs.existsSync(indexHtml)) {
@@ -87,18 +83,24 @@ app.use('/api/locations', locationsRoutes);
     app.get('*', (_req, res) => res.sendFile(indexHtml));
     console.log('Serving client build from', clientBuild);
   } else {
-    console.log('Client build not found, skipping static serving.');
+    console.log('Client build not found; skipping static serving.');
   }
 })();
 
-// ── Mongo + Server start
-mongoose
-  .connect(MONGO_URI, { dbName: process.env.MONGO_DB || undefined })
+/* ---------- Error handler ---------- */
+app.use((err, _req, res, _next) => {
+  console.error('Unhandled error:', err?.stack || err);
+  res.status(err.status || 500).json({ message: err.message || 'Server error' });
+});
+
+/* ---------- DB & Start ---------- */
+mongoose.set('strictQuery', false);
+mongoose.connect(MONGO_URI, { dbName: process.env.MONGO_DB || undefined })
   .then(() => {
-    console.log('Mongo connected');
-    app.listen(PORT, () => console.log(`API on http://localhost:${PORT}`));
+    console.log('✅ Mongo connected');
+    app.listen(PORT, () => console.log(`🚀 API listening on :${PORT}`));
   })
   .catch((err) => {
-    console.error('Mongo connect error:', err);
+    console.error('❌ Mongo connect error:', err);
     process.exit(1);
   });
