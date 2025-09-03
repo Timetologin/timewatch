@@ -1,20 +1,18 @@
-// server/routes/attendance.js
+// server/routes/attendance.routes.js
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 
 const Attendance = require('../models/Attendance');
-const auth = require('../middleware/auth');                // מוודא משתמש מחובר => req.user
-const officeGuard = require('../middleware/officeGuard');  // אכיפת מיקום/Bypass למורשים
+const { authenticate } = require('../middleware/authMiddleware'); // ✅ תיקון
+const officeGuard = require('../middleware/officeGuard');         // ✅ מידלוור מיקום/Bypass
 
 // ------- Helpers -------
 function dateKeyLocal(d = new Date()) {
-  // YYYY-MM-DD לפי זמן מקומי של השרת (פשוט ויציב לשימוש יומי)
   const off = d.getTimezoneOffset();
   const z = new Date(d.getTime() - off * 60000);
   return z.toISOString().slice(0, 10);
 }
-
 function pickGeo(body = {}) {
   const { lat, lng, accuracy, address } = body || {};
   const out = {};
@@ -24,57 +22,39 @@ function pickGeo(body = {}) {
   if (typeof address === 'string') out.address = address;
   return out;
 }
-
-// ------- הרשאות בסיס לדוחות (התאם לשמות אצלך אם צריך) -------
 function requireAnyPermission(perms = []) {
   return (req, res, next) => {
     try {
-      const user = req.user || {};
-      const p = user.permissions || {};
+      const p = (req.user && req.user.permissions) || {};
       const ok = perms.some(key => Boolean(p[key]));
       if (!ok) return res.status(403).json({ message: 'Insufficient permissions' });
       next();
-    } catch (e) {
+    } catch {
       return res.status(403).json({ message: 'Insufficient permissions' });
     }
   };
 }
 
 // ------- Clock In -------
-router.post('/clockin', auth, officeGuard, async (req, res) => {
+router.post('/clockin', authenticate, officeGuard(), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(401).json({ message: 'Not authenticated' });
     }
-
     const today = dateKeyLocal();
     let doc = await Attendance.findOne({ user: userId, date: today });
-
-    if (doc?.clockIn) {
-      return res.status(400).json({ message: 'Already clocked in today' });
-    }
+    if (doc?.clockIn) return res.status(400).json({ message: 'Already clocked in today' });
 
     const now = new Date();
-    const meta = {
-      ip: req.ip,
-      ua: req.headers['user-agent'],
-      geo: pickGeo(req.body),
-    };
+    const meta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
 
     if (!doc) {
-      doc = new Attendance({
-        user: userId,
-        date: today,
-        clockIn: now,
-        // שדות מטא יישמרו רק אם מוגדרים בסכמה שלך; אחרת יתעלמו (לא שובר כלום)
-        clockInMeta: meta,
-      });
+      doc = new Attendance({ user: userId, date: today, clockIn: now, clockInMeta: meta });
     } else {
       doc.clockIn = now;
-      doc.clockInMeta = meta; // יישמר אם הסכמה מכילה את זה
+      doc.clockInMeta = meta;
     }
-
     await doc.save();
     return res.json({ ok: true, attendance: doc });
   } catch (err) {
@@ -84,31 +64,20 @@ router.post('/clockin', auth, officeGuard, async (req, res) => {
 });
 
 // ------- Clock Out -------
-router.post('/clockout', auth, officeGuard, async (req, res) => {
+router.post('/clockout', authenticate, officeGuard(), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(401).json({ message: 'Not authenticated' });
     }
-
     const today = dateKeyLocal();
     const doc = await Attendance.findOne({ user: userId, date: today });
-
-    if (!doc?.clockIn) {
-      return res.status(400).json({ message: 'Must clock in before clocking out' });
-    }
-    if (doc.clockOut) {
-      return res.status(400).json({ message: 'Already clocked out today' });
-    }
+    if (!doc?.clockIn) return res.status(400).json({ message: 'Must clock in before clocking out' });
+    if (doc.clockOut) return res.status(400).json({ message: 'Already clocked out today' });
 
     const now = new Date();
     doc.clockOut = now;
-    doc.clockOutMeta = {
-      ip: req.ip,
-      ua: req.headers['user-agent'],
-      geo: pickGeo(req.body),
-    };
-
+    doc.clockOutMeta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
     await doc.save();
     return res.json({ ok: true, attendance: doc });
   } catch (err) {
@@ -118,31 +87,21 @@ router.post('/clockout', auth, officeGuard, async (req, res) => {
 });
 
 // ------- Break Start -------
-router.post('/break/start', auth, officeGuard, async (req, res) => {
+router.post('/break/start', authenticate, officeGuard(), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(401).json({ message: 'Not authenticated' });
     }
-
     const today = dateKeyLocal();
     let doc = await Attendance.findOne({ user: userId, date: today });
-
-    if (!doc?.clockIn) {
-      return res.status(400).json({ message: 'Must clock in before starting a break' });
-    }
+    if (!doc?.clockIn) return res.status(400).json({ message: 'Must clock in before starting a break' });
 
     if (!Array.isArray(doc.breaks)) doc.breaks = [];
     const last = doc.breaks[doc.breaks.length - 1];
-    if (last && !last.end) {
-      return res.status(400).json({ message: 'A break is already in progress' });
-    }
+    if (last && !last.end) return res.status(400).json({ message: 'A break is already in progress' });
 
-    doc.breaks.push({
-      start: new Date(),
-      // אופציונלי: אפשר לשמור metaBreakStart אם יש בשכמה
-    });
-
+    doc.breaks.push({ start: new Date() });
     await doc.save();
     return res.json({ ok: true, attendance: doc });
   } catch (err) {
@@ -152,30 +111,22 @@ router.post('/break/start', auth, officeGuard, async (req, res) => {
 });
 
 // ------- Break End -------
-router.post('/break/end', auth, officeGuard, async (req, res) => {
+router.post('/break/end', authenticate, officeGuard(), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(401).json({ message: 'Not authenticated' });
     }
-
     const today = dateKeyLocal();
     const doc = await Attendance.findOne({ user: userId, date: today });
-
-    if (!doc?.clockIn) {
-      return res.status(400).json({ message: 'Must clock in before ending a break' });
-    }
+    if (!doc?.clockIn) return res.status(400).json({ message: 'Must clock in before ending a break' });
     if (!Array.isArray(doc.breaks) || doc.breaks.length === 0) {
       return res.status(400).json({ message: 'No break to end' });
     }
-
     const last = doc.breaks[doc.breaks.length - 1];
-    if (last.end) {
-      return res.status(400).json({ message: 'No break in progress' });
-    }
+    if (last.end) return res.status(400).json({ message: 'No break in progress' });
 
     last.end = new Date();
-
     await doc.save();
     return res.json({ ok: true, attendance: doc });
   } catch (err) {
@@ -184,15 +135,14 @@ router.post('/break/end', auth, officeGuard, async (req, res) => {
   }
 });
 
-// ------- Patch Notes (נשאר כבעבר, רק דואגים לאבטחה בסיסית) -------
-router.patch('/:id/notes', auth, async (req, res) => {
+// ------- Patch Notes -------
+router.patch('/:id/notes', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const { notes } = req.body || {};
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Bad attendance id' });
     }
-    // אופציונלי: לבדוק הרשאה לעריכת נוכחות (למשל attendanceEdit) או בעלות על הרשומה
     const doc = await Attendance.findByIdAndUpdate(
       id,
       { $set: { notes: typeof notes === 'string' ? notes : '' } },
@@ -206,8 +156,8 @@ router.patch('/:id/notes', auth, async (req, res) => {
   }
 });
 
-// ------- Report (קריאה — לא מחייב officeGuard) -------
-router.get('/report', auth, requireAnyPermission(['attendanceReadAll', 'reportExport']), async (req, res) => {
+// ------- Report -------
+router.get('/report', authenticate, requireAnyPermission(['attendanceReadAll', 'reportExport']), async (req, res) => {
   try {
     const { from, to, userId, department } = req.query || {};
     const q = {};
@@ -216,11 +166,7 @@ router.get('/report', auth, requireAnyPermission(['attendanceReadAll', 'reportEx
       if (from) q.date.$gte = from;
       if (to) q.date.$lte = to;
     }
-    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-      q.user = userId;
-    }
-    // אם במחלקות נשמר אצל המשתמש/נוכחות — הוסף כאן תנאי (לפי הסכמה שלך)
-    // לדוגמה: q.department = department
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) q.user = userId;
 
     const data = await Attendance.find(q)
       .populate('user', 'name email department')

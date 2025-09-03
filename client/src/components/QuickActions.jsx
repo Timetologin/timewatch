@@ -26,41 +26,49 @@ export default function QuickActions() {
   const sendClock = async (mode) => {
     setBusy(true);
     try {
-      const pos = await getGeo();
-      setLastGps(pos);
+      let payload = { mode, locationId: 'main' };
 
-      // payload תואם-שרת: גם lat/lng בשורש, וגם coords לשמירת תאימות
-      const payload = {
-        mode,                         // "in" | "out" | "break-start" | "break-end"
-        lat: pos.lat,
-        lng: pos.lng,
-        coords: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy },
-        locationId: 'main',
-      };
+      // אם למשתמש יש הרשאת Bypass – לא דורשים GPS בצד לקוח
+      const rawUser = localStorage.getItem('user');
+      const user = rawUser ? JSON.parse(rawUser) : null;
+      const hasBypass = user?.permissions?.attendanceBypassLocation === true;
 
-      // נסה קודם את הראוטר של /qr/clock
+      if (!hasBypass) {
+        const pos = await getGeo();
+        setLastGps(pos);
+        payload = {
+          ...payload,
+          lat: pos.lat,
+          lng: pos.lng,
+          coords: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy },
+        };
+      }
+
+      // קודם מנסים את קיוסק ה־QR (אם קיים)
       try {
         const { data } = await api.post('/qr/clock', payload);
         toast.success(data?.message || `Done: ${data?.action || mode}`);
         return;
       } catch (e) {
-        // אם הראוטר לא קיים/לא נכון – ננסה מסלולי /attendance/...
         const status = e?.response?.status;
         if (status !== 404 && status !== 400) throw e;
       }
 
-      // fallback לפי mode
+      // נפילה למסלולי attendance
       const routeMap = {
-        'in': '/attendance/clockin',
-        'out': '/attendance/clockout',
+        in: '/attendance/clockin',
+        out: '/attendance/clockout',
         'break-start': '/attendance/break/start',
         'break-end': '/attendance/break/end',
       };
       const path = routeMap[mode];
-      const { data } = await api.post(path, { lat: pos.lat, lng: pos.lng });
+      const { data } = await api.post(path, payload);
       toast.success(data?.message || 'Done');
     } catch (e) {
-      const msg = e?.response?.data?.message || e?.message || 'Action failed';
+      const msg =
+        e?.response?.data?.message ||
+        (e?.code === 1 ? 'User denied Geolocation' : e?.message) ||
+        'Action failed';
       toast.error(msg);
     } finally {
       setBusy(false);
@@ -75,7 +83,7 @@ export default function QuickActions() {
         <button className="btn-ghost"  disabled={busy} onClick={() => sendClock('break-start')}>Break Start</button>
         <button className="btn-ghost"  disabled={busy} onClick={() => sendClock('break-end')}>Break End</button>
 
-        {/* כפתור דיבוג GPS – אפשר להשאיר/להסיר */}
+        {/* כפתור דיבוג GPS */}
         <button
           className="btn-ghost"
           disabled={busy}
