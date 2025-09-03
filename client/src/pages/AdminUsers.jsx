@@ -1,27 +1,26 @@
 // client/src/pages/AdminUsers.jsx
 import React, { useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, handleApiError } from '../api';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
+// כולל הרשאת עקיפת מיקום
 const PERM_LIST = [
   ['usersManage', 'Users manage'],
   ['attendanceReadAll', 'Attendance read all'],
   ['attendanceEdit', 'Attendance edit'],
   ['reportExport', 'Report export'],
   ['kioskAccess', 'Kiosk access'],
-  ['attendanceBypassLocation', 'Bypass location'], // ← הרשאת עקיפת מיקום
+  ['attendanceBypassLocation', 'Bypass location'], // ← כאן
 ];
 
 export default function AdminUsers() {
   const navigate = useNavigate();
-  const [me, setMe] = useState(null);
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [showNew, setShowNew] = useState(false);
 
-  // טופס יצירה (תוספת, לא מוחק כלום)
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -42,16 +41,15 @@ export default function AdminUsers() {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api.get('/auth/me');
-        setMe(data);
-        if (!data?.permissions?.usersManage) {
+        const me = await api.get('/auth/me').then(r => r.data);
+        if (!me?.permissions?.usersManage) {
           toast.error('Not authorized');
           navigate('/', { replace: true });
           return;
         }
         await load();
-      } catch {
-        toast.error('Failed to load');
+      } catch (e) {
+        toast.error(handleApiError(e));
       }
     })();
     // eslint-disable-next-line
@@ -64,7 +62,7 @@ export default function AdminUsers() {
       const list = data?.users || data?.items || [];
       setRows(list);
     } catch (e) {
-      toast.error(e?.response?.data?.message || 'Failed to load users');
+      toast.error(handleApiError(e));
     } finally {
       setBusy(false);
     }
@@ -72,9 +70,8 @@ export default function AdminUsers() {
 
   const filtered = useMemo(() => rows, [rows]);
 
-  const togglePermInForm = (key) => {
-    setForm(f => ({ ...f, permissions: { ...f.permissions, [key]: !f.permissions[key] } }));
-  };
+  const togglePermInForm = (k) =>
+    setForm(f => ({ ...f, permissions: { ...f.permissions, [k]: !f.permissions[k] } }));
 
   const createUser = async () => {
     try {
@@ -83,13 +80,13 @@ export default function AdminUsers() {
         return;
       }
       const payload = { ...form, email: form.email.trim().toLowerCase() };
-      await api.post('/admin/users', payload);
+      await api.post('/admin/users', payload); // ← שים לב: אין "/api" בתחילת הנתיב
       toast.success('User created');
       setShowNew(false);
       setForm(f => ({ ...f, name: '', email: '', password: '' }));
       await load();
     } catch (e) {
-      toast.error(e?.response?.data?.message || 'Create failed');
+      toast.error(handleApiError(e));
     }
   };
 
@@ -165,7 +162,6 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* טבלת הרשאות למשתמשים קיימים */}
       <div className="card" style={{ overflowX: 'auto' }}>
         <table className="table">
           <thead>
@@ -183,9 +179,7 @@ export default function AdminUsers() {
             {filtered.length === 0 ? (
               <tr><td className="muted" colSpan={5 + PERM_LIST.length + 1}>No users</td></tr>
             ) : (
-              filtered.map(u => (
-                <UserRow key={u.id || u._id} user={u} onSaved={load} />
-              ))
+              filtered.map(u => <UserRow key={u.id || u._id} user={u} onSaved={load} />)
             )}
           </tbody>
         </table>
@@ -204,7 +198,7 @@ function UserRow({ user, onSaved }) {
       toast.success('Saved');
       onSaved?.();
     } catch (e) {
-      toast.error(e?.response?.data?.message || 'Save failed');
+      toast.error(handleApiError(e));
     }
   };
 
