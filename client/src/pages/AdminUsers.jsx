@@ -4,14 +4,14 @@ import { api, handleApiError } from '../api';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
-// כולל הרשאת עקיפת מיקום
+// כוללת הרשאת עקיפת מיקום
 const PERM_LIST = [
   ['usersManage', 'Users manage'],
   ['attendanceReadAll', 'Attendance read all'],
   ['attendanceEdit', 'Attendance edit'],
   ['reportExport', 'Report export'],
   ['kioskAccess', 'Kiosk access'],
-  ['attendanceBypassLocation', 'Bypass location'], // ← כאן
+  ['attendanceBypassLocation', 'Bypass location'],
 ];
 
 export default function AdminUsers() {
@@ -80,7 +80,7 @@ export default function AdminUsers() {
         return;
       }
       const payload = { ...form, email: form.email.trim().toLowerCase() };
-      await api.post('/admin/users', payload); // ← שים לב: אין "/api" בתחילת הנתיב
+      await api.post('/admin/users', payload);
       toast.success('User created');
       setShowNew(false);
       setForm(f => ({ ...f, name: '', email: '', password: '' }));
@@ -172,12 +172,12 @@ export default function AdminUsers() {
               <th>Active</th>
               <th>Dept</th>
               {PERM_LIST.map(([key,label]) => <th key={key}>{label}</th>)}
-              <th>Save</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td className="muted" colSpan={5 + PERM_LIST.length + 1}>No users</td></tr>
+              <tr><td className="muted" colSpan={6 + PERM_LIST.length}>No users</td></tr>
             ) : (
               filtered.map(u => <UserRow key={u.id || u._id} user={u} onSaved={load} />)
             )}
@@ -189,13 +189,47 @@ export default function AdminUsers() {
 }
 
 function UserRow({ user, onSaved }) {
-  const [perms, setPerms] = useState(user.permissions || {});
-  useEffect(() => { setPerms(user.permissions || {}); }, [user]);
+  const [edit, setEdit] = useState(false);
 
-  const save = async () => {
+  const [draft, setDraft] = useState({
+    name: user.name || '',
+    email: user.email || '',
+    password: '',
+    role: user.role || 'user',
+    department: user.department || '',
+    active: !!user.active,
+  });
+
+  const [perms, setPerms] = useState(user.permissions || {});
+  useEffect(() => {
+    setPerms(user.permissions || {});
+    setDraft({
+      name: user.name || '',
+      email: user.email || '',
+      password: '',
+      role: user.role || 'user',
+      department: user.department || '',
+      active: !!user.active,
+    });
+  }, [user]);
+
+  const savePerms = async () => {
     try {
       await api.patch(`/admin/users/${user.id || user._id}/permissions`, { permissions: perms });
-      toast.success('Saved');
+      toast.success('Permissions saved');
+      onSaved?.();
+    } catch (e) {
+      toast.error(handleApiError(e));
+    }
+  };
+
+  const saveProfile = async () => {
+    try {
+      const payload = { ...draft };
+      if (!payload.password) delete payload.password; // לא משנה אם ריק
+      await api.patch(`/admin/users/${user.id || user._id}`, payload);
+      toast.success('User updated');
+      setEdit(false);
       onSaved?.();
     } catch (e) {
       toast.error(handleApiError(e));
@@ -204,11 +238,36 @@ function UserRow({ user, onSaved }) {
 
   return (
     <tr>
-      <td>{user.name || '-'}</td>
-      <td>{user.email}</td>
-      <td>{user.role}</td>
-      <td>{user.active ? 'Yes' : 'No'}</td>
-      <td>{user.department || '-'}</td>
+      <td>
+        {edit ? (
+          <input className="input" value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} />
+        ) : user.name || '-'}
+      </td>
+      <td>
+        {edit ? (
+          <input className="input" value={draft.email} onChange={e => setDraft({ ...draft, email: e.target.value })} />
+        ) : user.email}
+      </td>
+      <td>
+        {edit ? (
+          <select className="input" value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value })}>
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
+        ) : user.role}
+      </td>
+      <td>
+        {edit ? (
+          <input type="checkbox" checked={draft.active} onChange={e => setDraft({ ...draft, active: e.target.checked })} />
+        ) : (user.active ? 'Yes' : 'No')}
+      </td>
+      <td>
+        {edit ? (
+          <input className="input" value={draft.department} onChange={e => setDraft({ ...draft, department: e.target.value })} />
+        ) : (user.department || '-')}
+      </td>
+
+      {/* Permissions columns */}
       {PERM_LIST.map(([key]) => (
         <td key={key}>
           <input
@@ -218,7 +277,28 @@ function UserRow({ user, onSaved }) {
           />
         </td>
       ))}
-      <td><button className="btn" onClick={save}>Save</button></td>
+
+      <td style={{ whiteSpace: 'nowrap' }}>
+        {edit ? (
+          <>
+            <input
+              className="input"
+              style={{ width: 120, marginRight: 8 }}
+              type="password"
+              placeholder="New password (optional)"
+              value={draft.password}
+              onChange={(e) => setDraft({ ...draft, password: e.target.value })}
+            />
+            <button className="btn" onClick={saveProfile}>Update</button>
+            <button className="btn-ghost" style={{ marginLeft: 8 }} onClick={() => { setEdit(false); setDraft({ ...draft, password: '' }); }}>Cancel</button>
+          </>
+        ) : (
+          <>
+            <button className="btn" onClick={() => setEdit(true)}>Edit</button>
+            <button className="btn" style={{ marginLeft: 8 }} onClick={savePerms}>Save perms</button>
+          </>
+        )}
+      </td>
     </tr>
   );
 }

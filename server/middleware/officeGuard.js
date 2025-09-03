@@ -1,41 +1,63 @@
 // server/middleware/officeGuard.js
-function haversineMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+//
+// Middleware שמוודא הימצאות בתוך רדיוס המשרד.
+// אם למשתמש יש הרשאה attendanceBypassLocation – מדלגים על כל הבדיקות.
 
-const OFFICE = {
-  lat: Number(process.env.OFFICE_LAT || 0),
-  lng: Number(process.env.OFFICE_LNG || 0),
-  radius: Number(process.env.OFFICE_RADIUS_METERS || 150),
+module.exports = function officeGuard(options = {}) {
+  const {
+    // אם יש לכם קונפיג של מיקום/רדיוס, הוא נשאר כאן (לא נגעתי)
+    officeLat = null,
+    officeLng = null,
+    radiusMeters = 200,
+    requireGps = false, // אם true – בדרך־כלל דורשים GPS; נעקוף כשיש bypass
+  } = options;
+
+  return (req, res, next) => {
+    try {
+      // ⛳️ עקיפה למי שמורשה
+      if (req?.userDoc?.permissions?.attendanceBypassLocation) {
+        req.locationBypassed = true;
+        return next();
+      }
+
+      // אם אין עקיפה – ממשיכים באכיפה הרגילה
+      const lat = Number(req.body?.lat ?? req.query?.lat);
+      const lng = Number(req.body?.lng ?? req.query?.lng);
+
+      // אם מוגדרים לבקש GPS ובאמת אין – חוסם
+      if (requireGps && (!Number.isFinite(lat) || !Number.isFinite(lng))) {
+        return res.status(400).json({ message: 'Location required' });
+      }
+
+      // אם אין קונפיג משרד – מאשרים (לא נוגעים בהגיון הקודם)
+      if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng) || !Number.isFinite(radiusMeters)) {
+        return next();
+      }
+
+      // אם לא נשלח מיקום כלל – חסם
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return res.status(400).json({ message: 'Invalid location' });
+      }
+
+      // חישוב מרחק (Haversine)
+      const toRad = (v) => (v * Math.PI) / 180;
+      const R = 6371000; // meters
+      const dLat = toRad(lat - officeLat);
+      const dLng = toRad(lng - officeLng);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(officeLat)) * Math.cos(toRad(lat)) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = R * c;
+
+      if (distance > radiusMeters) {
+        return res.status(403).json({ message: 'Outside office radius' });
+      }
+
+      next();
+    } catch (e) {
+      next(e);
+    }
+  };
 };
-
-function requireAtOffice(req, res, next) {
-  const must = String(process.env.ATTENDANCE_REQUIRE_OFFICE || '0') === '1';
-
-  // ✅ Bypass for users with explicit permission
-  const bypass = !!req?.userDoc?.permissions?.attendanceBypassLocation;
-  if (bypass) return next();
-  if (!must) return next();
-
-  const lat = Number(req.body?.lat ?? req.body?.coords?.lat);
-  const lng = Number(req.body?.lng ?? req.body?.coords?.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return res.status(400).json({ message: 'Location required' });
-  }
-
-  const dist = haversineMeters(lat, lng, OFFICE.lat, OFFICE.lng);
-  if (dist > OFFICE.radius) {
-    return res.status(403).json({ message: 'You are not at the office location' });
-  }
-  next();
-}
-
-module.exports = { requireAtOffice };
