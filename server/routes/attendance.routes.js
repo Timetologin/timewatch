@@ -4,8 +4,16 @@ const router = express.Router();
 const mongoose = require('mongoose');
 
 const Attendance = require('../models/Attendance');
-const { authenticate } = require('../middleware/authMiddleware'); // ✅ תיקון
-const officeGuard = require('../middleware/officeGuard');         // ✅ מידלוור מיקום/Bypass
+const { authenticate } = require('../middleware/authMiddleware');
+const officeGuard = require('../middleware/officeGuard');
+
+// קונפיג למשרד מתוך ENV
+const officeOptions = {
+  officeLat: Number(process.env.OFFICE_LAT),
+  officeLng: Number(process.env.OFFICE_LNG),
+  radiusMeters: Number(process.env.OFFICE_RADIUS_M) || 200,
+  requireGps: Boolean(Number(process.env.ATTENDANCE_REQUIRE_OFFICE || 0)),
+};
 
 // ------- Helpers -------
 function dateKeyLocal(d = new Date()) {
@@ -36,7 +44,7 @@ function requireAnyPermission(perms = []) {
 }
 
 // ------- Clock In -------
-router.post('/clockin', authenticate, officeGuard(), async (req, res) => {
+router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
@@ -64,7 +72,7 @@ router.post('/clockin', authenticate, officeGuard(), async (req, res) => {
 });
 
 // ------- Clock Out -------
-router.post('/clockout', authenticate, officeGuard(), async (req, res) => {
+router.post('/clockout', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
@@ -87,7 +95,7 @@ router.post('/clockout', authenticate, officeGuard(), async (req, res) => {
 });
 
 // ------- Break Start -------
-router.post('/break/start', authenticate, officeGuard(), async (req, res) => {
+router.post('/break/start', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
@@ -111,7 +119,7 @@ router.post('/break/start', authenticate, officeGuard(), async (req, res) => {
 });
 
 // ------- Break End -------
-router.post('/break/end', authenticate, officeGuard(), async (req, res) => {
+router.post('/break/end', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
@@ -159,7 +167,7 @@ router.patch('/:id/notes', authenticate, async (req, res) => {
 // ------- Report -------
 router.get('/report', authenticate, requireAnyPermission(['attendanceReadAll', 'reportExport']), async (req, res) => {
   try {
-    const { from, to, userId, department } = req.query || {};
+    const { from, to, userId } = req.query || {};
     const q = {};
     if (from || to) {
       q.date = {};
