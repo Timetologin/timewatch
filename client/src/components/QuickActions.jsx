@@ -19,6 +19,39 @@ async function getGeo() {
   });
 }
 
+// מרענן את המשתמש מ-/api/auth/me אם חסר לנו permissions עדכניים בלוקאל סטורג'
+async function ensureFreshUser() {
+  try {
+    const raw = localStorage.getItem('user');
+    const cached = raw ? JSON.parse(raw) : null;
+
+    // אם יש כבר permissions באובייקט – נניח שזה עדכני מספיק
+    if (cached && cached.permissions && typeof cached.permissions === 'object') {
+      return cached;
+    }
+
+    // אחרת נרענן מ-/me
+    const { data } = await api.get('/auth/me');
+    const fresh = {
+      id: data?.id,
+      name: data?.name,
+      email: data?.email,
+      role: data?.role,
+      permissions: data?.permissions || {},
+    };
+    localStorage.setItem('user', JSON.stringify(fresh));
+    return fresh;
+  } catch {
+    // אם יש כשל/401, נחזיר מה שיש בקאש (גם אם חלקי)
+    try {
+      const raw = localStorage.getItem('user');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 export default function QuickActions() {
   const [busy, setBusy] = useState(false);
   const [lastGps, setLastGps] = useState(null);
@@ -26,15 +59,14 @@ export default function QuickActions() {
   const sendClock = async (mode) => {
     setBusy(true);
     try {
-      let payload = { mode, locationId: 'main' };
-
-      // אם למשתמש יש הרשאת Bypass – לא דורשים GPS בצד לקוח
-      const rawUser = localStorage.getItem('user');
-      const user = rawUser ? JSON.parse(rawUser) : null;
+      // 1) ודא שיש לנו הרשאות עדכניות (מרענן localStorage.user אם צריך)
+      const user = await ensureFreshUser();
       const hasBypass = user?.permissions?.attendanceBypassLocation === true;
 
+      // 2) בונים payload. אם אין Bypass -> נשיג GPS; אם יש -> לא מבקשים GPS כלל
+      let payload = { mode, locationId: 'main' };
       if (!hasBypass) {
-        const pos = await getGeo();
+        const pos = await getGeo(); // כאן עלול להיזרק "User denied Geolocation" אם חסום
         setLastGps(pos);
         payload = {
           ...payload,
@@ -44,7 +76,7 @@ export default function QuickActions() {
         };
       }
 
-      // קודם מנסים את קיוסק ה־QR (אם קיים)
+      // 3) מנסים קודם את מסלול הקיוסק (אם קיים אצלך)
       try {
         const { data } = await api.post('/qr/clock', payload);
         toast.success(data?.message || `Done: ${data?.action || mode}`);
@@ -54,7 +86,7 @@ export default function QuickActions() {
         if (status !== 404 && status !== 400) throw e;
       }
 
-      // נפילה למסלולי attendance
+      // 4) נפילה למסלולי attendance
       const routeMap = {
         in: '/attendance/clockin',
         out: '/attendance/clockout',
