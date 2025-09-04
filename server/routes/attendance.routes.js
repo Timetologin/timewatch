@@ -213,7 +213,48 @@ router.patch('/:id/notes', authenticate, async (req, res) => {
   }
 });
 
-// ------- Report (כמו שהיה) -------
+// ------- List (חדש: עובד גם בלי attendanceReadAll) -------
+// מחזיר רשימת נוכחות בטווח תאריכים.
+// אם למשתמש אין attendanceReadAll -> מחזיר רק את שלו.
+// אם יש לו attendanceReadAll -> יכול לראות את כולם, או לסנן לפי user=:id.
+router.get('/list', authenticate, async (req, res) => {
+  try {
+    const perms = (req.userDoc && req.userDoc.permissions) || {};
+    const canReadAll = !!perms.attendanceReadAll;
+
+    const { from, to, user, page = 1, limit = 50 } = req.query || {};
+    const q = {};
+    if (from || to) {
+      q.date = {};
+      if (from) q.date.$gte = String(from);
+      if (to) q.date.$lte = String(to);
+    }
+
+    if (canReadAll) {
+      if (user && String(user).trim()) q.user = String(user).trim();
+    } else {
+      q.user = req.user.id;
+    }
+
+    const pg = Math.max(1, parseInt(page, 10) || 1);
+    const lim = Math.min(500, Math.max(1, parseInt(limit, 10) || 50));
+
+    const [rows, total] = await Promise.all([
+      Attendance.find(q)
+        .sort({ date: -1 })
+        .skip((pg - 1) * lim)
+        .limit(lim)
+        .lean(),
+      Attendance.countDocuments(q),
+    ]);
+
+    res.json({ page: pg, limit: lim, total, rows });
+  } catch (e) {
+    res.status(500).json({ message: e.message || 'Failed to load attendance list' });
+  }
+});
+
+// ------- Report -------
 router.get('/report', authenticate, requireAnyPermission(['attendanceReadAll', 'reportExport']), async (req, res) => {
   try {
     const { from, to, userId } = req.query || {};
