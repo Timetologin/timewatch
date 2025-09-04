@@ -1,59 +1,61 @@
 // server/middleware/officeGuard.js
 //
 // Middleware לאכיפת מיקום משרד + עקיפה למורשים.
-// קורא הגדרות או מ-ENV או מהאופציות שהועברו אליו.
 //
 // ENV הנתמכים:
-//   ATTENDANCE_REQUIRE_OFFICE=1      -> מחייב GPS למי שאין Bypass
+//   ATTENDANCE_REQUIRE_OFFICE=1
 //   OFFICE_LAT=32.08040
 //   OFFICE_LNG=34.78070
-//   OFFICE_RADIUS_M=600
+//   OFFICE_RADIUS_M=600   או   OFFICE_RADIUS_METERS=600
 
 function toNum(v, def = NaN) {
   const n = Number(v);
   return Number.isFinite(n) ? n : def;
 }
 
+function readRadiusMeters(options) {
+  // סדר עדיפויות: options.radiusMeters -> OFFICE_RADIUS_M -> OFFICE_RADIUS_METERS -> 200
+  if (Number.isFinite(options?.radiusMeters)) return Number(options.radiusMeters);
+  const m = toNum(process.env.OFFICE_RADIUS_M);
+  if (Number.isFinite(m)) return m;
+  const mm = toNum(process.env.OFFICE_RADIUS_METERS);
+  if (Number.isFinite(mm)) return mm;
+  return 200;
+}
+
 module.exports = function officeGuard(options = {}) {
-  // טעינת אופציות עם נפילה ל-ENV כברירת מחדל
   const officeLat = toNum(options.officeLat, toNum(process.env.OFFICE_LAT));
   const officeLng = toNum(options.officeLng, toNum(process.env.OFFICE_LNG));
-  const radiusMeters = toNum(options.radiusMeters, toNum(process.env.OFFICE_RADIUS_M, 200));
+  const radiusMeters = readRadiusMeters(options);
   const requireGps = typeof options.requireGps === 'boolean'
     ? options.requireGps
     : Boolean(Number(process.env.ATTENDANCE_REQUIRE_OFFICE || 0));
 
   return (req, res, next) => {
     try {
-      // עקיפה — אם יש למשתמש ההרשאה
+      // BYPASS — למשתמשים מורשים
       if (req?.userDoc?.permissions?.attendanceBypassLocation) {
         req.locationBypassed = true;
         return next();
       }
 
-      // שליפת מיקום מהבקשה
       const lat = toNum(req.body?.lat ?? req.query?.lat);
       const lng = toNum(req.body?.lng ?? req.query?.lng);
 
-      // אם הגדרנו לדרוש GPS ואין קואורדינטות — חסימה
       if (requireGps && (!Number.isFinite(lat) || !Number.isFinite(lng))) {
         return res.status(400).json({ message: 'Location required' });
       }
 
-      // אם אין לנו קונפיג משרד תקף (lat/lng/radius) — לא אוכפים רדיוס
       if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng) || !Number.isFinite(radiusMeters)) {
         return next();
       }
 
-      // אם דרשנו GPS או התקבלו קואורדינטות — נבדוק מרחק
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        // לא דרשנו GPS אבל אין קואורדינטות — מעבירים
         return next();
       }
 
-      // חישוב מרחק (Haversine)
       const toRad = (v) => (v * Math.PI) / 180;
-      const R = 6371000; // meters
+      const R = 6371000;
       const dLat = toRad(lat - officeLat);
       const dLng = toRad(lng - officeLng);
       const a =

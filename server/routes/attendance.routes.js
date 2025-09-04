@@ -33,7 +33,7 @@ function pickGeo(body = {}) {
 function requireAnyPermission(perms = []) {
   return (req, res, next) => {
     try {
-      const p = (req.user && req.user.permissions) || {};
+      const p = (req.userDoc && req.userDoc.permissions) || {};
       const ok = perms.some(key => Boolean(p[key]));
       if (!ok) return res.status(403).json({ message: 'Insufficient permissions' });
       next();

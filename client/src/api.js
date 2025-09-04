@@ -59,3 +59,4 @@ api.interceptors.response.use(
 export function handleApiError(err) {
   return err?.response?.data?.message || err?.message || 'Request failed';
 }
+export const API_BASE = baseURL;

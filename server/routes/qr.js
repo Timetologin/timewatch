@@ -5,6 +5,7 @@ const { authenticate } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
+// ---- Helpers ----
 function haversineMeters(lat1, lon1, lat2, lon2) {
   const R = 6371000;
   const toRad = (d) => (d * Math.PI) / 180;
@@ -16,22 +17,44 @@ function haversineMeters(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
-
+function readRadius() {
+  const m = Number(process.env.OFFICE_RADIUS_M);
+  if (Number.isFinite(m)) return m;
+  const mm = Number(process.env.OFFICE_RADIUS_METERS);
+  if (Number.isFinite(mm)) return mm;
+  return 150;
+}
 const OFFICE = {
   lat: Number(process.env.OFFICE_LAT || 0),
   lng: Number(process.env.OFFICE_LNG || 0),
-  radius: Number(process.env.OFFICE_RADIUS_METERS || 150),
+  radius: readRadius(),
 };
 const mustEnforce = () => String(process.env.ATTENDANCE_REQUIRE_OFFICE || '0') === '1';
 const todayStr = (d = new Date()) =>
   new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
-// QR endpoints require auth
+function pickGeo(body = {}) {
+  const { lat, lng, accuracy, address } = body || {};
+  const out = {};
+  if (typeof lat === 'number') out.lat = lat;
+  if (typeof lng === 'number') out.lng = lng;
+  if (typeof accuracy === 'number') out.accuracy = accuracy;
+  if (typeof address === 'string') out.address = address;
+  return out;
+}
+function getActiveSession(doc) {
+  if (!doc?.sessions?.length) return null;
+  const last = doc.sessions[doc.sessions.length - 1];
+  return (last && last.start && !last.end) ? last : null;
+}
+
+// ---- QR endpoints require auth ----
 router.use(authenticate);
 
 /**
  * POST /api/qr/clock
  * body: { mode: 'in'|'out'|'break-start'|'break-end', lat, lng, coords? }
+ * תומך בריבוי משמרות ביום (sessions).
  */
 router.post('/clock', async (req, res) => {
   try {
@@ -54,44 +77,66 @@ router.post('/clock', async (req, res) => {
 
     const date = todayStr();
     let doc = await Attendance.findOne({ user: userId, date });
-    if (!doc) doc = new Attendance({ user: userId, date });
+    if (!doc) {
+      doc = new Attendance({ user: userId, date, sessions: [] });
+    }
+
+    const now = new Date();
+    const meta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
+    const active = getActiveSession(doc);
 
     if (mode === 'in') {
-      if (doc.clockIn && !doc.clockOut) return res.status(400).json({ message: 'Already clocked in' });
-      doc.clockIn = new Date();
-      doc.clockOut = undefined;
+      if (active) return res.status(400).json({ message: 'Already clocked in (session still open)' });
+      // פותחים סשן חדש
+      doc.sessions.push({ start: now, inMeta: meta, breaks: [] });
+      // תאימות: משקף את הסשן הפעיל גם בשדות העליונים
+      doc.clockIn = now;
+      doc.clockOut = null;
       doc.breaks = [];
+      doc.clockInMeta = meta;
+
       await doc.save();
-      return res.json({ message: 'Clocked in', doc });
+      return res.json({ message: 'Clocked in', attendance: doc });
     }
 
     if (mode === 'out') {
-      if (!doc.clockIn) return res.status(400).json({ message: 'You need to clock in first' });
-      if (doc.clockOut) return res.status(400).json({ message: 'Already clocked out' });
-      doc.clockOut = new Date();
+      if (!active) return res.status(400).json({ message: 'No open session to clock out' });
+      active.end = now;
+      active.outMeta = meta;
+      // תאימות
+      doc.clockOut = now;
+      doc.clockOutMeta = meta;
+
       await doc.save();
-      return res.json({ message: 'Clocked out', doc });
+      return res.json({ message: 'Clocked out', attendance: doc });
     }
 
     if (mode === 'break-start') {
-      if (!doc.clockIn) return res.status(400).json({ message: 'You need to clock in first' });
-      const breaks = Array.isArray(doc.breaks) ? doc.breaks : [];
-      if (breaks.some(b => b.start && !b.end)) return res.status(400).json({ message: 'Break already started' });
-      breaks.push({ start: new Date(), end: null });
-      doc.breaks = breaks;
+      if (!active) return res.status(400).json({ message: 'Must clock in before starting a break' });
+      const lastBreak = active.breaks[active.breaks.length - 1];
+      if (lastBreak && !lastBreak.end) {
+        return res.status(400).json({ message: 'A break is already in progress' });
+      }
+      active.breaks.push({ start: now });
+      // תאימות
+      doc.breaks = active.breaks;
+
       await doc.save();
-      return res.json({ message: 'Break started', doc });
+      return res.json({ message: 'Break started', attendance: doc });
     }
 
     if (mode === 'break-end') {
-      if (!doc.clockIn) return res.status(400).json({ message: 'You need to clock in first' });
-      const breaks = Array.isArray(doc.breaks) ? doc.breaks : [];
-      const open = breaks.find(b => b.start && !b.end);
-      if (!open) return res.status(400).json({ message: 'No open break to end' });
-      open.end = new Date();
-      doc.markModified('breaks');
+      if (!active) return res.status(400).json({ message: 'Must clock in before ending a break' });
+      const lastBreak = active.breaks[active.breaks.length - 1];
+      if (!lastBreak || lastBreak.end) {
+        return res.status(400).json({ message: 'No break in progress' });
+      }
+      lastBreak.end = now;
+      // תאימות
+      doc.breaks = active.breaks;
+
       await doc.save();
-      return res.json({ message: 'Break ended', doc });
+      return res.json({ message: 'Break ended', attendance: doc });
     }
 
     return res.status(400).json({ message: 'Unknown mode' });
