@@ -44,14 +44,15 @@ function fmtHm(totalSeconds) {
   return `${h}h ${m}m`;
 }
 function displayForUser(u) {
-  // מקבל את מה שחזר מהשרת ב-rows[i].user (אחרי populate)
   if (u && typeof u === 'object') {
-    return u.name || u.email || `User ${String(u._id || u.id || '').slice(-4)}`;
+    const name = (u.name || '').trim();
+    const email = (u.email || '').trim();
+    if (name && email) return `${name} (${email})`;
+    if (name) return name;
+    if (email) return email;
   }
-  // fallback אם משום מה לא פוצלייט
-  const id = String(u || '');
-  if (!id) return 'Me';
-  return `User ${id.slice(-4)}`;
+  const id = typeof u === 'object' ? (u._id || u.id || '') : String(u || '');
+  return `User ${String(id).slice(-4)}`;
 }
 
 export default function StatsCharts() {
@@ -59,12 +60,11 @@ export default function StatsCharts() {
     const d = new Date();
     const y = d.getFullYear();
     const m = `${d.getMonth() + 1}`.padStart(2, '0');
-    return `${y}-${m}`; // YYYY-MM
+    return `${y}-${m}`;
   });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // טען נתוני חודש מלא
   const load = async (monthStr = month) => {
     try {
       setLoading(true);
@@ -73,12 +73,7 @@ export default function StatsCharts() {
       const last = new Date(y, m, 0);
 
       const { data } = await api.get('/attendance/list', {
-        params: {
-          from: dayISO(first),
-          to: dayISO(last),
-          page: 1,
-          limit: 1000,
-        }
+        params: { from: dayISO(first), to: dayISO(last), page: 1, limit: 1000 }
       });
 
       const arr = Array.isArray(data?.rows)
@@ -115,7 +110,7 @@ export default function StatsCharts() {
   }, [rows, month]);
 
   const byUser = useMemo(() => {
-    const map = new Map(); // key -> {name, sec}
+    const map = new Map();
     const now = new Date();
     for (const r of rows) {
       const sec = secondsOfRow(r, now);
@@ -182,7 +177,7 @@ export default function StatsCharts() {
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div
                     title={u.name}
-                    style={{ width: 180, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    style={{ width: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                   >
                     {u.name}
                   </div>

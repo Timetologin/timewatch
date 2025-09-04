@@ -7,12 +7,10 @@ import { api } from '../api';
 import toast from 'react-hot-toast';
 import BypassBanner from '../components/BypassBanner';
 
-// ---- Helpers ----
 function dayISO(d = new Date()) {
   const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return x.toISOString().slice(0, 10);
 }
-
 function fmtHMS(totalSeconds) {
   const s = Math.max(0, Math.round(totalSeconds || 0));
   const h = Math.floor(s / 3600);
@@ -20,7 +18,6 @@ function fmtHMS(totalSeconds) {
   const sec = s % 60;
   return `${h}h ${m}m ${sec}s`;
 }
-
 function secondsOfBreaks(breaks = [], now = new Date()) {
   return breaks.reduce((sum, b) => {
     if (!b.start) return sum;
@@ -30,9 +27,7 @@ function secondsOfBreaks(breaks = [], now = new Date()) {
     return sum + dur;
   }, 0);
 }
-
 function secondsOfRow(r, now = new Date()) {
-  // סשנים מודרניים
   if (Array.isArray(r.sessions) && r.sessions.length) {
     return r.sessions.reduce((sum, seg) => {
       if (!seg.start) return sum;
@@ -43,7 +38,6 @@ function secondsOfRow(r, now = new Date()) {
       return sum + Math.max(0, total - bsum);
     }, 0);
   }
-  // תאימות לאחור (clockIn/clockOut + breaks עליונים)
   let total = 0;
   if (r.clockIn) {
     const start = new Date(r.clockIn);
@@ -53,11 +47,9 @@ function secondsOfRow(r, now = new Date()) {
   const bsum = secondsOfBreaks(r.breaks || [], now);
   return Math.max(0, total - bsum);
 }
-
 function hasActiveSession(r) {
   if (Array.isArray(r.sessions) && r.sessions.length) {
     const last = r.sessions[r.sessions.length - 1];
-    // סשן פתוח אם יש start ואין end
     if (last?.start && !last?.end) return true;
   } else if (r.clockIn && !r.clockOut) {
     return true;
@@ -65,13 +57,11 @@ function hasActiveSession(r) {
   return false;
 }
 
-// ---- KPIs with live seconds ----
 function KPIs() {
   const [rows, setRows] = useState([]);
   const [late, setLate] = useState(0);
-  const [tick, setTick] = useState(0); // מתקתק כל שנייה בשביל "לייב"
+  const [tick, setTick] = useState(0);
 
-  // טוען 7 ימים אחרונים (מספיק עבור Today/Last 7 days)
   const load = async () => {
     try {
       const to = new Date();
@@ -86,7 +76,6 @@ function KPIs() {
           ? data.data
           : [];
 
-      // Late entries: כניסה ראשונה אחרי 09:15
       const lateCount = arr.filter((r) => {
         let firstIn = null;
         if (Array.isArray(r.sessions) && r.sessions.length) {
@@ -106,7 +95,6 @@ function KPIs() {
     }
   };
 
-  // טען פעם אחת + האזן ל־attendance-changed
   useEffect(() => {
     load();
     const onChanged = () => load();
@@ -114,29 +102,24 @@ function KPIs() {
     return () => window.removeEventListener('attendance-changed', onChanged);
   }, []);
 
-  // מתקתק כל שנייה כדי לחשב “לייב”
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // חישוב “חי” לפי השעה הנוכחית
   const { todaySec, weekSec, monthSec } = useMemo(() => {
     const now = new Date();
     const todayKey = dayISO(now);
-
     let today = 0, week = 0;
     for (const r of rows) {
       const s = secondsOfRow(r, now);
       week += s;
       if (r.date === todayKey) today += s;
     }
-    // Month (sample) – כרגע משתמש באותם 7 ימים (כמו שהיה לפני), אפשר להרחיב בהמשך
-    const month = week;
+    const month = week; // sample
     return { todaySec: today, weekSec: week, monthSec: month };
   }, [rows, tick]);
 
-  // יש סשן פתוח? נוסיף אינדיקציה מינורית (לא חובה כרגע)
   const live = rows.some(hasActiveSession);
 
   return (
@@ -164,20 +147,17 @@ function KPIs() {
 export default function Dashboard() {
   return (
     <div className="container">
-      <h2 className="h2">Dashboard</h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <h2 className="h2" style={{ marginRight: 'auto' }}>Dashboard</h2>
+        {/* קישור קבוע ל-Kiosk */}
+        <a href="/kiosk" className="btn-ghost">Kiosk</a>
+      </div>
       <div className="muted">Overview of attendance and productivity</div>
+
       <BypassBanner />
-
-      {/* פעולות מהירות */}
       <QuickActions />
-
-      {/* KPI עם שניות ולייב */}
       <KPIs />
-
-      {/* סטטיסטיקות חודשיות */}
       <StatsCharts />
-
-      {/* טבלת נוכחות */}
       <AttendanceTable />
     </div>
   );

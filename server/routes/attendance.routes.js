@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 
-const Attendance = require('../models/Attendance');
+const Attendance = require('../models/Attendance');        // ← שים לב לנתיב הנכון
 const { authenticate } = require('../middleware/authMiddleware');
 const officeGuard = require('../middleware/officeGuard');
 
@@ -11,7 +11,7 @@ const officeGuard = require('../middleware/officeGuard');
 const officeOptions = {
   officeLat: Number(process.env.OFFICE_LAT),
   officeLng: Number(process.env.OFFICE_LNG),
-  radiusMeters: Number(process.env.OFFICE_RADIUS_M) || 200,
+  radiusMeters: Number(process.env.OFFICE_RADIUS_M) || Number(process.env.OFFICE_RADIUS_METERS) || 200,
   requireGps: Boolean(Number(process.env.ATTENDANCE_REQUIRE_OFFICE || 0)),
 };
 
@@ -77,9 +77,7 @@ router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, re
     }
 
     const active = getActiveSession(doc);
-    if (active) {
-      return res.status(400).json({ message: 'Already clocked in (session still open)' });
-    }
+    if (active) return res.status(400).json({ message: 'Already clocked in (session still open)' });
 
     doc.sessions.push({ start: now, inMeta: meta, breaks: [] });
     doc.clockIn = now;
@@ -208,9 +206,7 @@ router.patch('/:id/notes', authenticate, async (req, res) => {
   }
 });
 
-// ------- List (עם populate לשמות) -------
-// אם אין attendanceReadAll -> מחזיר רק את הרשומות של המשתמש המחובר.
-// אם יש -> יכול לראות את כולם או לסנן לפי user=:id.
+// ------- List (עם populate כדי להחזיר שם/אימייל למשתמש) -------
 router.get('/list', authenticate, async (req, res) => {
   try {
     const perms = (req.userDoc && req.userDoc.permissions) || {};
@@ -235,7 +231,7 @@ router.get('/list', authenticate, async (req, res) => {
 
     const [rows, total] = await Promise.all([
       Attendance.find(q)
-        .populate('user', 'name email')  // <<=== חשוב: כדי שתקבל שם/מייל
+        .populate('user', 'name email')   // ← פה מתבצע ה-populate
         .sort({ date: -1 })
         .skip((pg - 1) * lim)
         .limit(lim)
