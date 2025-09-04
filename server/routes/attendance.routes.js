@@ -48,7 +48,7 @@ function getActiveSession(doc) {
   return (last && last.start && !last.end) ? last : null;
 }
 
-// ------- Clock In (פותח סשן חדש אם אין סשן פתוח) -------
+// ------- Clock In -------
 router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
@@ -63,7 +63,6 @@ router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, re
     const meta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
 
     if (!doc) {
-      // מסמך יומי ראשון
       doc = new Attendance({
         user: userId,
         date: today,
@@ -77,17 +76,15 @@ router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, re
       return res.json({ ok: true, attendance: doc });
     }
 
-    // אם כבר יש סשן פתוח – לא מאפשרים Clock In נוסף (צריך קודם Clock Out)
     const active = getActiveSession(doc);
     if (active) {
       return res.status(400).json({ message: 'Already clocked in (session still open)' });
     }
 
-    // פותחים סשן חדש באותו יום
     doc.sessions.push({ start: now, inMeta: meta, breaks: [] });
-    doc.clockIn = now;        // תאימות לאחור – מייצג את הסשן הפעיל
+    doc.clockIn = now;
     doc.clockOut = null;
-    doc.breaks = [];          // תאימות – מציג את ההפסקות של הסשן הפעיל
+    doc.breaks = [];
     doc.clockInMeta = meta;
 
     await doc.save();
@@ -98,7 +95,7 @@ router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, re
   }
 });
 
-// ------- Clock Out (סוגר את הסשן הפתוח בלבד) -------
+// ------- Clock Out -------
 router.post('/clockout', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
@@ -117,7 +114,6 @@ router.post('/clockout', authenticate, officeGuard(officeOptions), async (req, r
     active.end = now;
     active.outMeta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
 
-    // תאימות – משקף את מצב הסשן האחרון
     doc.clockOut = now;
     doc.clockOutMeta = active.outMeta;
 
@@ -129,7 +125,7 @@ router.post('/clockout', authenticate, officeGuard(officeOptions), async (req, r
   }
 });
 
-// ------- Break Start (רק אם יש סשן פתוח) -------
+// ------- Break Start -------
 router.post('/break/start', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
@@ -150,7 +146,6 @@ router.post('/break/start', authenticate, officeGuard(officeOptions), async (req
     }
 
     active.breaks.push({ start: new Date() });
-    // תאימות: מעדכן גם breaks העליון כדי שהקליינט הישן יציג נכון
     doc.breaks = active.breaks;
 
     await doc.save();
@@ -161,7 +156,7 @@ router.post('/break/start', authenticate, officeGuard(officeOptions), async (req
   }
 });
 
-// ------- Break End (סוגר הפסקה פתוחה בסשן הפתוח) -------
+// ------- Break End -------
 router.post('/break/end', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
@@ -192,7 +187,7 @@ router.post('/break/end', authenticate, officeGuard(officeOptions), async (req, 
   }
 });
 
-// ------- Notes (ללא שינוי מהותי) -------
+// ------- Notes -------
 router.patch('/:id/notes', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
@@ -213,10 +208,9 @@ router.patch('/:id/notes', authenticate, async (req, res) => {
   }
 });
 
-// ------- List (חדש: עובד גם בלי attendanceReadAll) -------
-// מחזיר רשימת נוכחות בטווח תאריכים.
-// אם למשתמש אין attendanceReadAll -> מחזיר רק את שלו.
-// אם יש לו attendanceReadAll -> יכול לראות את כולם, או לסנן לפי user=:id.
+// ------- List (עם populate לשמות) -------
+// אם אין attendanceReadAll -> מחזיר רק את הרשומות של המשתמש המחובר.
+// אם יש -> יכול לראות את כולם או לסנן לפי user=:id.
 router.get('/list', authenticate, async (req, res) => {
   try {
     const perms = (req.userDoc && req.userDoc.permissions) || {};
@@ -241,6 +235,7 @@ router.get('/list', authenticate, async (req, res) => {
 
     const [rows, total] = await Promise.all([
       Attendance.find(q)
+        .populate('user', 'name email')  // <<=== חשוב: כדי שתקבל שם/מייל
         .sort({ date: -1 })
         .skip((pg - 1) * lim)
         .limit(lim)

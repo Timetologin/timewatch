@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import toast from 'react-hot-toast';
 
-// עוזר
+// Helpers
 function dayISO(d) {
   const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return x.toISOString().slice(0, 10);
@@ -43,6 +43,16 @@ function fmtHm(totalSeconds) {
   const m = Math.floor((s % 3600) / 60);
   return `${h}h ${m}m`;
 }
+function displayForUser(u) {
+  // מקבל את מה שחזר מהשרת ב-rows[i].user (אחרי populate)
+  if (u && typeof u === 'object') {
+    return u.name || u.email || `User ${String(u._id || u.id || '').slice(-4)}`;
+  }
+  // fallback אם משום מה לא פוצלייט
+  const id = String(u || '');
+  if (!id) return 'Me';
+  return `User ${id.slice(-4)}`;
+}
 
 export default function StatsCharts() {
   const [month, setMonth] = useState(() => {
@@ -54,13 +64,13 @@ export default function StatsCharts() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // טען נתונים של כל החודש (מהיום הראשון עד האחרון)
+  // טען נתוני חודש מלא
   const load = async (monthStr = month) => {
     try {
       setLoading(true);
       const [y, m] = monthStr.split('-').map(Number);
       const first = new Date(y, m - 1, 1);
-      const last = new Date(y, m, 0); // היום האחרון של החודש
+      const last = new Date(y, m, 0);
 
       const { data } = await api.get('/attendance/list', {
         params: {
@@ -88,14 +98,12 @@ export default function StatsCharts() {
   useEffect(() => { load(month); }, [month]);
 
   const byDay = useMemo(() => {
-    // מפה: YYYY-MM-DD -> שניות
     const map = new Map();
     const now = new Date();
     for (const r of rows) {
       const sec = secondsOfRow(r, now);
       map.set(r.date, (map.get(r.date) || 0) + sec);
     }
-    // בונים וקטור לכל ימי החודש, גם אם 0
     const [y, m] = month.split('-').map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
     const out = [];
@@ -107,16 +115,15 @@ export default function StatsCharts() {
   }, [rows, month]);
 
   const byUser = useMemo(() => {
-    // אם יש קריאות עם משתמשים שונים (כשיש הרשאה לקרוא את כולם) – נציג התפלגות
-    const map = new Map(); // userId -> {name, sec}
+    const map = new Map(); // key -> {name, sec}
     const now = new Date();
     for (const r of rows) {
       const sec = secondsOfRow(r, now);
-      const uid = (typeof r.user === 'object' && r.user?._id) || r.user || 'me';
-      const name = (typeof r.user === 'object' && r.user?.name) || (uid === 'me' ? 'Me' : String(uid));
-      const cur = map.get(uid) || { name, sec: 0 };
+      const key = typeof r.user === 'object' ? (r.user._id || r.user.id) : r.user;
+      const label = displayForUser(r.user);
+      const cur = map.get(key) || { name: label, sec: 0 };
       cur.sec += sec;
-      map.set(uid, cur);
+      map.set(key, cur);
     }
     return Array.from(map.values()).sort((a, b) => b.sec - a.sec);
   }, [rows]);
@@ -164,16 +171,19 @@ export default function StatsCharts() {
           )}
         </div>
 
-        {/* Minutes by user (יופיע רק אם יש יותר ממשתמש אחד בנתונים) */}
+        {/* Minutes by user */}
         <div className="card" style={{ padding: 12, minHeight: 180 }}>
           <div className="muted" style={{ marginBottom: 8 }}>Minutes by user</div>
           {byUser.length <= 1 ? (
             <div className="muted">No data</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {byUser.map((u) => (
-                <div key={u.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {byUser.map((u, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    title={u.name}
+                    style={{ width: 180, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  >
                     {u.name}
                   </div>
                   <div style={{ flex: 1, height: 10, background: '#e2e8f0', borderRadius: 999 }}>
