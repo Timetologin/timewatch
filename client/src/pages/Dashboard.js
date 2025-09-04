@@ -1,5 +1,5 @@
 // client/src/pages/Dashboard.js
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import QuickActions from '../components/QuickActions';
 import StatsCharts from '../components/StatsCharts';
 import AttendanceTable from '../components/AttendanceTable';
@@ -7,77 +7,87 @@ import { api } from '../api';
 import toast from 'react-hot-toast';
 import BypassBanner from '../components/BypassBanner';
 
-function fmt(mins) {
-  const h = Math.floor((mins || 0) / 60);
-  const m = Math.max(0, (mins || 0) % 60);
-  return `${h}h ${m}m`;
-}
+// ---- Helpers ----
 function dayISO(d = new Date()) {
-  const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString();
-  return x.slice(0, 10);
+  const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return x.toISOString().slice(0, 10);
 }
 
-// מחשב דקות מסמך נוכחות, עם תמיכה בסשנים מרובים + “חי” אם סשן פתוח
-function minutesOfRow(r) {
-  const sumBreaks = (breaks = []) =>
-    breaks.reduce((s, b) => {
-      if (!b.start) return s;
-      const end = b.end ? new Date(b.end) : new Date();
-      const start = new Date(b.start);
-      return s + Math.max(0, Math.round((end - start) / 60000));
-    }, 0);
+function fmtHMS(totalSeconds) {
+  const s = Math.max(0, Math.round(totalSeconds || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h}h ${m}m ${sec}s`;
+}
 
-  // אם קיימים סשנים – נסכם את כולם
+function secondsOfBreaks(breaks = [], now = new Date()) {
+  return breaks.reduce((sum, b) => {
+    if (!b.start) return sum;
+    const start = new Date(b.start);
+    const end = b.end ? new Date(b.end) : now;
+    const dur = Math.max(0, Math.round((end - start) / 1000));
+    return sum + dur;
+  }, 0);
+}
+
+function secondsOfRow(r, now = new Date()) {
+  // סשנים מודרניים
   if (Array.isArray(r.sessions) && r.sessions.length) {
     return r.sessions.reduce((sum, seg) => {
       if (!seg.start) return sum;
-      const end = seg.end ? new Date(seg.end) : new Date(); // פתוח = עד עכשיו
       const start = new Date(seg.start);
-      const dur = Math.max(0, Math.round((end - start) / 60000));
-      const bsum = sumBreaks(seg.breaks);
-      return sum + Math.max(0, dur - bsum);
+      const end = seg.end ? new Date(seg.end) : now;
+      const total = Math.max(0, Math.round((end - start) / 1000));
+      const bsum = secondsOfBreaks(seg.breaks || [], now);
+      return sum + Math.max(0, total - bsum);
     }, 0);
   }
-
-  // תאימות לאחור: משתמשים ב-clockIn/clockOut וב-breaks העליונים
-  let m = 0;
+  // תאימות לאחור (clockIn/clockOut + breaks עליונים)
+  let total = 0;
   if (r.clockIn) {
-    const end = r.clockOut ? new Date(r.clockOut) : new Date();
     const start = new Date(r.clockIn);
-    m = Math.max(0, Math.round((end - start) / 60000));
+    const end = r.clockOut ? new Date(r.clockOut) : now;
+    total = Math.max(0, Math.round((end - start) / 1000));
   }
-  const bsum = sumBreaks(r.breaks || []);
-  return Math.max(0, m - bsum);
+  const bsum = secondsOfBreaks(r.breaks || [], now);
+  return Math.max(0, total - bsum);
 }
 
-function KPIs() {
-  const [kpi, setKpi] = useState({ today: 0, week: 0, month: 0, late: 0 });
+function hasActiveSession(r) {
+  if (Array.isArray(r.sessions) && r.sessions.length) {
+    const last = r.sessions[r.sessions.length - 1];
+    // סשן פתוח אם יש start ואין end
+    if (last?.start && !last?.end) return true;
+  } else if (r.clockIn && !r.clockOut) {
+    return true;
+  }
+  return false;
+}
 
+// ---- KPIs with live seconds ----
+function KPIs() {
+  const [rows, setRows] = useState([]);
+  const [late, setLate] = useState(0);
+  const [tick, setTick] = useState(0); // מתקתק כל שנייה בשביל "לייב"
+
+  // טוען 7 ימים אחרונים (מספיק עבור Today/Last 7 days)
   const load = async () => {
     try {
       const to = new Date();
       const from = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
-
       const { data } = await api.get('/attendance/list', {
         params: { from: dayISO(from), to: dayISO(to), page: 1, limit: 500 },
       });
 
-      // תמיכה בשני פורמטים: {rows: [...]} או {data: [...]}
-      const rows = Array.isArray(data?.rows)
+      const arr = Array.isArray(data?.rows)
         ? data.rows
         : Array.isArray(data?.data)
-        ? data.data
-        : [];
+          ? data.data
+          : [];
 
-      const totalWeek = rows.reduce((s, r) => s + minutesOfRow(r), 0);
-      const todayTotal = rows
-        .filter((r) => r.date === dayISO())
-        .reduce((s, r) => s + minutesOfRow(r), 0);
-
-      const monthTotal = totalWeek;
-
-      const lateCount = rows.filter((r) => {
-        // “מאוחר” = clockIn של הסשן הראשון היום > 09:15
+      // Late entries: כניסה ראשונה אחרי 09:15
+      const lateCount = arr.filter((r) => {
         let firstIn = null;
         if (Array.isArray(r.sessions) && r.sessions.length) {
           const withStart = r.sessions.filter(s => s.start);
@@ -89,30 +99,64 @@ function KPIs() {
         return firstIn.getHours() > 9 || (firstIn.getHours() === 9 && firstIn.getMinutes() > 15);
       }).length;
 
-      setKpi({ today: todayTotal, week: totalWeek, month: monthTotal, late: lateCount });
+      setRows(arr);
+      setLate(lateCount);
     } catch (e) {
       toast.error(e?.response?.data?.message || e?.message || 'Failed to load KPIs');
     }
   };
 
+  // טען פעם אחת + האזן ל־attendance-changed
   useEffect(() => {
     load();
     const onChanged = () => load();
     window.addEventListener('attendance-changed', onChanged);
-    // ריענון “חי” כל דקה כדי להראות דקות זזות בזמן סשן פתוח
-    const t = setInterval(load, 60 * 1000);
-    return () => {
-      window.removeEventListener('attendance-changed', onChanged);
-      clearInterval(t);
-    };
+    return () => window.removeEventListener('attendance-changed', onChanged);
   }, []);
+
+  // מתקתק כל שנייה כדי לחשב “לייב”
+  useEffect(() => {
+    const t = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // חישוב “חי” לפי השעה הנוכחית
+  const { todaySec, weekSec, monthSec } = useMemo(() => {
+    const now = new Date();
+    const todayKey = dayISO(now);
+
+    let today = 0, week = 0;
+    for (const r of rows) {
+      const s = secondsOfRow(r, now);
+      week += s;
+      if (r.date === todayKey) today += s;
+    }
+    // Month (sample) – כרגע משתמש באותם 7 ימים (כמו שהיה לפני), אפשר להרחיב בהמשך
+    const month = week;
+    return { todaySec: today, weekSec: week, monthSec: month };
+  }, [rows, tick]);
+
+  // יש סשן פתוח? נוסיף אינדיקציה מינורית (לא חובה כרגע)
+  const live = rows.some(hasActiveSession);
 
   return (
     <div className="kpis" style={{ marginTop: 16 }}>
-      <div className="kpi"><div className="label">Today</div><div className="value">{fmt(kpi.today)}</div></div>
-      <div className="kpi"><div className="label">Last 7 days</div><div className="value">{fmt(kpi.week)}</div></div>
-      <div className="kpi"><div className="label">Month (sample)</div><div className="value">{fmt(kpi.month)}</div></div>
-      <div className="kpi"><div className="label">Late entries</div><div className="value">{kpi.late}</div></div>
+      <div className="kpi">
+        <div className="label">Today {live ? '• live' : ''}</div>
+        <div className="value">{fmtHMS(todaySec)}</div>
+      </div>
+      <div className="kpi">
+        <div className="label">Last 7 days</div>
+        <div className="value">{fmtHMS(weekSec)}</div>
+      </div>
+      <div className="kpi">
+        <div className="label">Month (sample)</div>
+        <div className="value">{fmtHMS(monthSec)}</div>
+      </div>
+      <div className="kpi">
+        <div className="label">Late entries</div>
+        <div className="value">{late}</div>
+      </div>
     </div>
   );
 }
@@ -127,13 +171,13 @@ export default function Dashboard() {
       {/* פעולות מהירות */}
       <QuickActions />
 
-      {/* KPI מעל הגרפים */}
+      {/* KPI עם שניות ולייב */}
       <KPIs />
 
-      {/* גרפים חודשיים */}
+      {/* סטטיסטיקות חודשיות */}
       <StatsCharts />
 
-      {/* טבלת נוכחות עם עימוד */}
+      {/* טבלת נוכחות */}
       <AttendanceTable />
     </div>
   );
