@@ -24,13 +24,8 @@ async function ensureFreshUser() {
   try {
     const raw = localStorage.getItem('user');
     const cached = raw ? JSON.parse(raw) : null;
+    if (cached && cached.permissions && typeof cached.permissions === 'object') return cached;
 
-    // אם יש כבר permissions באובייקט – נניח שזה עדכני מספיק
-    if (cached && cached.permissions && typeof cached.permissions === 'object') {
-      return cached;
-    }
-
-    // אחרת נרענן מ-/me
     const { data } = await api.get('/auth/me');
     const fresh = {
       id: data?.id,
@@ -42,7 +37,6 @@ async function ensureFreshUser() {
     localStorage.setItem('user', JSON.stringify(fresh));
     return fresh;
   } catch {
-    // אם יש כשל/401, נחזיר מה שיש בקאש (גם אם חלקי)
     try {
       const raw = localStorage.getItem('user');
       return raw ? JSON.parse(raw) : null;
@@ -59,14 +53,14 @@ export default function QuickActions() {
   const sendClock = async (mode) => {
     setBusy(true);
     try {
-      // 1) ודא שיש לנו הרשאות עדכניות (מרענן localStorage.user אם צריך)
+      // 1) ודא שיש לנו הרשאות עדכניות
       const user = await ensureFreshUser();
       const hasBypass = user?.permissions?.attendanceBypassLocation === true;
 
-      // 2) בונים payload. אם אין Bypass -> נשיג GPS; אם יש -> לא מבקשים GPS כלל
+      // 2) payload – אם אין Bypass נבקש GPS; אם יש – לא
       let payload = { mode, locationId: 'main' };
       if (!hasBypass) {
-        const pos = await getGeo(); // כאן עלול להיזרק "User denied Geolocation" אם חסום
+        const pos = await getGeo(); // אם חסום – השגיאה תיתפס ב-catch
         setLastGps(pos);
         payload = {
           ...payload,
@@ -76,17 +70,7 @@ export default function QuickActions() {
         };
       }
 
-      // 3) מנסים קודם את מסלול הקיוסק (אם קיים אצלך)
-      try {
-        const { data } = await api.post('/qr/clock', payload);
-        toast.success(data?.message || `Done: ${data?.action || mode}`);
-        return;
-      } catch (e) {
-        const status = e?.response?.status;
-        if (status !== 404 && status !== 400) throw e;
-      }
-
-      // 4) נפילה למסלולי attendance
+      // 3) קוראים **רק** לראוטי attendance (לא לקיוסק)
       const routeMap = {
         in: '/attendance/clockin',
         out: '/attendance/clockout',
@@ -96,6 +80,9 @@ export default function QuickActions() {
       const path = routeMap[mode];
       const { data } = await api.post(path, payload);
       toast.success(data?.message || 'Done');
+
+      // 4) משדרים אירוע ריענון גלובלי כדי שהדאשבורד יעדכן נתונים
+      window.dispatchEvent(new CustomEvent('attendance-changed', { detail: { action: mode } }));
     } catch (e) {
       const msg =
         e?.response?.data?.message ||

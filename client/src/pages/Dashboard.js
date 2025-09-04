@@ -14,66 +14,75 @@ function fmt(mins) {
   return `${h}h ${m}m`;
 }
 
-// החזרת תאריך מקומי בפורמט YYYY-MM-DD
+// תאריך מקומי YYYY-MM-DD
 function dayISO(d = new Date()) {
   const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString();
   return x.slice(0, 10);
 }
 
-// KPI מינימלי לשבוע אחרון
+// KPI – כולל ריענון אחרי פעולת Clock
 function KPIs() {
   const [kpi, setKpi] = useState({ today: 0, week: 0, month: 0, late: 0 });
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const to = new Date();
-        const from = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+  const load = async () => {
+    try {
+      const to = new Date();
+      const from = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
 
-        const { data } = await api.get('/attendance/list', {
-          params: {
-            from: dayISO(from),
-            to: dayISO(to),
-            page: 1,
-            limit: 500,
-          },
-        });
+      const { data } = await api.get('/attendance/list', {
+        params: {
+          from: dayISO(from),
+          to: dayISO(to),
+          page: 1,
+          limit: 500,
+        },
+      });
 
-        const rows = Array.isArray(data?.rows) ? data.rows : [];
+      // תמיכה בשני פורמטים: {rows: [...]} או {data: [...]}
+      const rows = Array.isArray(data?.rows)
+        ? data.rows
+        : Array.isArray(data?.data)
+        ? data.data
+        : [];
 
-        // דקות נטו (שעות פחות הפסקות)
-        const minutes = (r) => {
-          let m = 0;
-          if (r.clockIn && r.clockOut) {
-            m = Math.max(0, Math.round((new Date(r.clockOut) - new Date(r.clockIn)) / 60000));
+      // דקות נטו (שעות פחות הפסקות)
+      const minutes = (r) => {
+        let m = 0;
+        if (r.clockIn && r.clockOut) {
+          m = Math.max(0, Math.round((new Date(r.clockOut) - new Date(r.clockIn)) / 60000));
+        }
+        (r.breaks || []).forEach((b) => {
+          if (b.start && b.end) {
+            m -= Math.max(0, Math.round((new Date(b.end) - new Date(b.start)) / 60000));
           }
-          (r.breaks || []).forEach((b) => {
-            if (b.start && b.end) {
-              m -= Math.max(0, Math.round((new Date(b.end) - new Date(b.start)) / 60000));
-            }
-          });
-          return Math.max(0, m);
-        };
+        });
+        return Math.max(0, m);
+      };
 
-        const totalWeek = rows.reduce((s, r) => s + minutes(r), 0);
-        const todayTotal = rows
-          .filter((r) => r.date === dayISO())
-          .reduce((s, r) => s + minutes(r), 0);
+      const totalWeek = rows.reduce((s, r) => s + minutes(r), 0);
+      const todayTotal = rows
+        .filter((r) => r.date === dayISO())
+        .reduce((s, r) => s + minutes(r), 0);
 
-        // כרגע Month = דוגמה (אותו ערך של שבוע); נרחיב בהמשך אם תרצה
-        const monthTotal = totalWeek;
+      const monthTotal = totalWeek;
 
-        const lateCount = rows.filter((r) => {
-          if (!r.clockIn) return false;
-          const t = new Date(r.clockIn);
-          return t.getHours() > 9 || (t.getHours() === 9 && t.getMinutes() > 15);
-        }).length;
+      const lateCount = rows.filter((r) => {
+        if (!r.clockIn) return false;
+        const t = new Date(r.clockIn);
+        return t.getHours() > 9 || (t.getHours() === 9 && t.getMinutes() > 15);
+      }).length;
 
-        setKpi({ today: todayTotal, week: totalWeek, month: monthTotal, late: lateCount });
-      } catch (e) {
-        toast.error(e?.response?.data?.message || e?.message || 'Failed to load KPIs');
-      }
-    })();
+      setKpi({ today: todayTotal, week: totalWeek, month: monthTotal, late: lateCount });
+    } catch (e) {
+      toast.error(e?.response?.data?.message || e?.message || 'Failed to load KPIs');
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const onChanged = () => load();
+    window.addEventListener('attendance-changed', onChanged);
+    return () => window.removeEventListener('attendance-changed', onChanged);
   }, []);
 
   return (
