@@ -9,6 +9,7 @@ import { api, handleApiError } from './api';
 import toast from 'react-hot-toast';
 import About from './pages/About';
 import AdminUsers from './pages/AdminUsers'; // ← NEW
+import Kiosk from './pages/Kiosk';
 
 function Login({ setToken }) {
   const [email, setEmail] = useState('');
@@ -104,6 +105,7 @@ export default function App() {
           <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
           <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
           <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="/kiosk" element={<Kiosk />} />
         </Routes>
       </BrowserRouter>
     </UIProvider>

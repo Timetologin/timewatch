@@ -1,5 +1,6 @@
 // client/src/pages/Dashboard.js
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import QuickActions from '../components/QuickActions';
 import StatsCharts from '../components/StatsCharts';
 import AttendanceTable from '../components/AttendanceTable';
@@ -7,6 +8,7 @@ import { api } from '../api';
 import toast from 'react-hot-toast';
 import BypassBanner from '../components/BypassBanner';
 
+// helpers
 function dayISO(d = new Date()) {
   const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return x.toISOString().slice(0, 10);
@@ -149,8 +151,8 @@ export default function Dashboard() {
     <div className="container">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <h2 className="h2" style={{ marginRight: 'auto' }}>Dashboard</h2>
-        {/* קישור קבוע ל-Kiosk */}
-        <a href="/kiosk" className="btn-ghost">Kiosk</a>
+        {/* קישור ריאקטיבי ל-Kiosk (ללא ריענון דף) */}
+        <Link to="/kiosk" className="btn-ghost">Kiosk</Link>
       </div>
       <div className="muted">Overview of attendance and productivity</div>
 
