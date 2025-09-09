@@ -15,7 +15,7 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         const { data } = await api.get('/auth/me');
         if (mounted) setMe(data);
       } catch {
-        // אם אין טוקן/שגיאה, ה־api interceptor כבר ינתב ללוגין
+        // interceptor יכוון ללוגין אם צריך
       }
     })();
     return () => { mounted = false; };
@@ -24,12 +24,13 @@ export default function Navbar({ rightSlot = null, onLogout }) {
   const handleLogout = () => {
     if (typeof onLogout === 'function') onLogout(navigate);
     else {
-      try { localStorage.removeItem('token'); } catch {}
+      try { localStorage.removeItem('token'); localStorage.removeItem('auth'); } catch {}
       navigate('/login', { replace: true });
     }
   };
 
   const canManageUsers = !!me?.permissions?.usersManage;
+  const is = (p) => location.pathname === p || location.pathname.startsWith(p + '/');
 
   return (
     <div className="navbar">
@@ -41,13 +42,22 @@ export default function Navbar({ rightSlot = null, onLogout }) {
       <div className="nav-spacer" />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Link className="link" to="/">Dashboard</Link>
-        <Link className="link" to="/about">About</Link>
-        {canManageUsers && <Link className="link" to="/admin/users">Users</Link>}
+        <Link className={`link${is('/') ? ' active' : ''}`} to="/">Dashboard</Link>
+        <Link className={`link${is('/about') ? ' active' : ''}`} to="/about">About</Link>
+        {/* 🔥 לשונית קיוסק */}
+        <Link className={`link${is('/kiosk') ? ' active' : ''}`} to="/kiosk">Kiosk</Link>
+        {canManageUsers && (
+          <Link className={`link${is('/admin') ? ' active' : ''}`} to="/admin/users">Users</Link>
+        )}
         {me?.name && <span className="badge" title={me.email || ''}>{me.name}</span>}
         {rightSlot}
         <button className="btn-ghost" onClick={handleLogout}>Logout</button>
       </div>
+
+      {/* הדגשת הלשונית הפעילה אם אין לך CSS לזה */}
+      <style>{`
+        .link.active { background:#e2e8f0; color:#0f172a; border-radius:8px; padding:6px 8px; }
+      `}</style>
     </div>
   );
 }
