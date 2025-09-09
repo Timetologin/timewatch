@@ -3,11 +3,18 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { api } from '../api';
 
+/**
+ * ניווט עליון ראשי:
+ * - Dashboard / About / Kiosk / Users (מותנה בהרשאה usersManage)
+ * - שם משתמש בצד ימין + Logout
+ * - הדגשת לשונית פעילה
+ */
 export default function Navbar({ rightSlot = null, onLogout }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [me, setMe] = useState(null);
 
+  // טוען פרטי משתמש כדי לדעת הרשאות + תווית שם/מייל
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -15,48 +22,72 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         const { data } = await api.get('/auth/me');
         if (mounted) setMe(data);
       } catch {
-        // interceptor יכוון ללוגין אם צריך
+        // אם לא מאומת, ה-interceptor ידאג להפניה ללוגין
       }
     })();
     return () => { mounted = false; };
   }, [location.pathname]);
 
   const handleLogout = () => {
-    if (typeof onLogout === 'function') onLogout(navigate);
-    else {
-      try { localStorage.removeItem('token'); localStorage.removeItem('auth'); } catch {}
-      navigate('/login', { replace: true });
+    if (typeof onLogout === 'function') {
+      onLogout(navigate);
+    } else {
+      try {
+        localStorage.removeItem('token');
+        localStorage.removeItem('auth');
+      } finally {
+        navigate('/login', { replace: true });
+      }
     }
   };
 
   const canManageUsers = !!me?.permissions?.usersManage;
-  const is = (p) => location.pathname === p || location.pathname.startsWith(p + '/');
+
+  // עוזר להדגשת לשונית פעילה
+  const isActive = (path) =>
+    location.pathname === path || location.pathname.startsWith(path + '/');
 
   return (
-    <div className="navbar">
+    <div className="navbar" style={{ padding: '12px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <img src="/logo.png" alt="Costoro Logo" style={{ height: 32, width: 32, borderRadius: 6 }} />
         <strong>Costoro • TimeWatch</strong>
       </div>
 
-      <div className="nav-spacer" />
+      <div style={{ flex: 1 }} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Link className={`link${is('/') ? ' active' : ''}`} to="/">Dashboard</Link>
-        <Link className={`link${is('/about') ? ' active' : ''}`} to="/about">About</Link>
-        {/* 🔥 לשונית קיוסק */}
-        <Link className={`link${is('/kiosk') ? ' active' : ''}`} to="/kiosk">Kiosk</Link>
+      <nav style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link className={`link${isActive('/') ? ' active' : ''}`} to="/">Dashboard</Link>
+        <Link className={`link${isActive('/about') ? ' active' : ''}`} to="/about">About</Link>
+
+        {/* לשונית Kiosk */}
+        <Link className={`link${isActive('/kiosk') ? ' active' : ''}`} to="/kiosk">Kiosk</Link>
+
+        {/* לשונית Users רק למורשים */}
         {canManageUsers && (
-          <Link className={`link${is('/admin') ? ' active' : ''}`} to="/admin/users">Users</Link>
+          <Link className={`link${isActive('/admin') ? ' active' : ''}`} to="/admin/users">Users</Link>
         )}
-        {me?.name && <span className="badge" title={me.email || ''}>{me.name}</span>}
-        {rightSlot}
-        <button className="btn-ghost" onClick={handleLogout}>Logout</button>
-      </div>
 
-      {/* הדגשת הלשונית הפעילה אם אין לך CSS לזה */}
+        {/* תווית משתמש */}
+        {me?.name && (
+          <span className="badge" title={me.email || ''} style={{ marginLeft: 4 }}>
+            {me.name}
+          </span>
+        )}
+
+        {rightSlot}
+
+        <button className="btn-ghost" onClick={handleLogout}>Logout</button>
+      </nav>
+
+      {/* סטייל מינימלי אם אין לך CSS מוכן */}
       <style>{`
-        .link.active { background:#e2e8f0; color:#0f172a; border-radius:8px; padding:6px 8px; }
+        .link { color:#334155; text-decoration:none; padding:6px 8px; border-radius:8px; }
+        .link:hover { background:#f1f5f9; }
+        .link.active { background:#e2e8f0; color:#0f172a; }
+        .badge { background:#e2e8f0; color:#0f172a; padding:4px 8px; border-radius:999px; font-size:12px; }
+        .btn-ghost { background:transparent; border:1px solid #e2e8f0; padding:6px 10px; border-radius:8px; cursor:pointer; }
+        .btn-ghost:hover { background:#f8fafc; }
       `}</style>
     </div>
   );
