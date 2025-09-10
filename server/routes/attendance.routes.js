@@ -13,13 +13,12 @@ const officeGuard = require('../middleware/officeGuard');
 ------------------------------------------------------- */
 
 function dateKeyLocal(d = new Date()) {
-  // YYYY-MM-DD לפי זמן מקומי
   const off = d.getTimezoneOffset();
   const z = new Date(d.getTime() - off * 60000);
   return z.toISOString().slice(0, 10);
 }
 
-// ⬅︎ עודכן: pickGeo קורא גם מ-body.coords וגם משדות עליונים
+// קורא גם מ-body.coords וגם משדות עליונים
 function pickGeo(body = {}) {
   const src = body && typeof body === 'object'
     ? (body.coords && typeof body.coords === 'object' ? body.coords : body)
@@ -33,13 +32,11 @@ function pickGeo(body = {}) {
 }
 
 function getActiveSession(doc) {
-  // מחזיר את הסשן הפתוח אם קיים (מחדש/לגאסי)
   if (Array.isArray(doc?.sessions) && doc.sessions.length) {
     const last = doc.sessions[doc.sessions.length - 1];
     if (last?.start && !last?.end) return last;
   }
   if (doc?.clockIn && !doc?.clockOut) {
-    // תאימות לגרסה ישנה
     return { start: doc.clockIn, breaks: doc.breaks || [] };
   }
   return null;
@@ -89,7 +86,7 @@ const officeOptions = {
 };
 
 /* -------------------------------------------------------
-   Clock In / Out + Breaks (כמו שהיה, עם מטא + pickGeo חדש)
+   Clock In / Out + Breaks (כמו שהיה, עם מטא + pickGeo)
 ------------------------------------------------------- */
 
 router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, res) => {
@@ -234,7 +231,82 @@ router.post('/break/end', authenticate, officeGuard(officeOptions), async (req, 
 });
 
 /* -------------------------------------------------------
-   Notes / List / Report
+   ✅ Toggle אוטומטי: אם יש סשן פתוח → ClockOut, אחרת → ClockIn
+------------------------------------------------------- */
+router.post('/toggle', authenticate, officeGuard(officeOptions), async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+    const today = dateKeyLocal();
+    let doc = await Attendance.findOne({ user: userId, date: today });
+
+    const meta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
+    const now = new Date();
+
+    if (!doc) {
+      doc = new Attendance({
+        user: userId,
+        date: today,
+        sessions: [{ start: now, inMeta: meta, breaks: [] }],
+        clockIn: now,
+        clockOut: null,
+        breaks: [],
+        clockInMeta: meta,
+      });
+      await doc.save();
+      return res.json({ ok: true, toggled: 'in', message: 'Clocked in', attendance: doc });
+    }
+
+    const active = getActiveSession(doc);
+    if (active) {
+      active.end = now;
+      active.outMeta = meta;
+      doc.clockOut = now;
+      doc.clockOutMeta = meta;
+      await doc.save();
+      return res.json({ ok: true, toggled: 'out', message: 'Clocked out', attendance: doc });
+    } else {
+      doc.sessions.push({ start: now, inMeta: meta, breaks: [] });
+      doc.clockIn = now;
+      doc.clockOut = null;
+      doc.breaks = [];
+      doc.clockInMeta = meta;
+      await doc.save();
+      return res.json({ ok: true, toggled: 'in', message: 'Clocked in', attendance: doc });
+    }
+  } catch (e) {
+    console.error('toggle error', e);
+    res.status(500).json({ message: e.message || 'Toggle failed' });
+  }
+});
+
+/* -------------------------------------------------------
+   ✅ עדכון אימוג'י לפרופיל (Self-service)
+------------------------------------------------------- */
+const ALLOWED_EMOJI = ['🙂','😀','😎','🤓','🧑‍💻','🧠','🚀','🔥','⭐','🦊','🐼','🐨','🐵','🐯','🐸'];
+router.patch('/profile/emoji', authenticate, async (req, res) => {
+  try {
+    const emoji = String(req.body?.emoji || '').trim();
+    if (!ALLOWED_EMOJI.includes(emoji)) {
+      return res.status(400).json({ message: 'Invalid emoji' });
+    }
+    const userId = req.user?.id || req.user?._id;
+    const updated = await User.findByIdAndUpdate(
+      userId,
+      { $set: { profileEmoji: emoji } },
+      { new: true, select: 'name email profileEmoji permissions' }
+    );
+    if (!updated) return res.status(404).json({ message: 'User not found' });
+    res.json({ ok: true, user: updated });
+  } catch (e) {
+    res.status(500).json({ message: e.message || 'Failed to update emoji' });
+  }
+});
+
+/* -------------------------------------------------------
+   Notes / List / Report / Presence
 ------------------------------------------------------- */
 
 router.patch('/:id/notes', authenticate, async (req, res) => {
@@ -281,7 +353,7 @@ router.get('/list', authenticate, async (req, res) => {
 
     const [rows, total] = await Promise.all([
       Attendance.find(q)
-        .populate('user', 'name email')
+        .populate('user', 'name email profileEmoji')
         .sort({ date: -1 })
         .skip((pg - 1) * lim)
         .limit(lim)
@@ -311,7 +383,7 @@ router.get(
       if (userId && mongoose.Types.ObjectId.isValid(userId)) q.user = userId;
 
       const data = await Attendance.find(q)
-        .populate('user', 'name email department')
+        .populate('user', 'name email department profileEmoji')
         .sort({ date: -1, 'user.name': 1 });
 
       return res.json({ ok: true, data });
@@ -322,14 +394,8 @@ router.get(
   }
 );
 
-/* -------------------------------------------------------
-   Live Presence (כפי שהיה אצלך)
-   GET /api/attendance/presence?activeOnly=1
-------------------------------------------------------- */
-
 router.get('/presence', authenticate, async (req, res) => {
   try {
-    // הרשאות צפייה לכל הארגון (כמו בניווט)
     const perms = (req.userDoc && req.userDoc.permissions) || {};
     const canReadAll = !!(
       perms.attendanceReadAll ||
@@ -342,33 +408,29 @@ router.get('/presence', authenticate, async (req, res) => {
     const onlyActive = String((req.query || {}).activeOnly || '1') === '1';
     const today = dateKeyLocal();
 
-    // מוצאים את כל מי שיש להם סשן פתוח היום
     const actives = await Attendance.find({
       date: today,
       $or: [
         { sessions: { $elemMatch: { start: { $exists: true }, end: { $exists: false } } } },
-        { $and: [{ clockIn: { $ne: null } }, { clockOut: null }] }, // תאימות legacy
+        { $and: [{ clockIn: { $ne: null } }, { clockOut: null }] }, // legacy
       ],
     })
-      .populate('user', 'name email department')
+      .populate('user', 'name email department profileEmoji')
       .lean();
 
     const now = new Date();
 
-    // ממפים את התוצאות
     const rows = actives.map((doc) => {
       const seg = getActiveSession(doc);
-      const onBreak = (() => {
-        const lb = seg?.breaks?.[seg.breaks.length - 1];
-        return !!(lb && lb.start && !lb.end);
-      })();
-
+      const lb = seg?.breaks?.[seg.breaks.length - 1];
+      const onBreak = !!(lb && lb.start && !lb.end);
       return {
         user: {
           id: String(doc.user?._id || doc.user),
           name: doc.user?.name || '',
           email: doc.user?.email || '',
           department: doc.user?.department || '',
+          emoji: doc.user?.profileEmoji || '🙂',
         },
         active: !!seg,
         since: seg?.start || null,
@@ -377,10 +439,7 @@ router.get('/presence', authenticate, async (req, res) => {
       };
     });
 
-    // אם מבוקש – מציגים רק פעילים (ברירת המחדל)
     const filtered = onlyActive ? rows.filter((r) => r.active) : rows;
-
-    // סדר: פעילים למעלה, אח"כ לפי זמן יורד
     filtered.sort((a, b) => {
       if (a.active !== b.active) return a.active ? -1 : 1;
       return b.elapsedSeconds - a.elapsedSeconds;

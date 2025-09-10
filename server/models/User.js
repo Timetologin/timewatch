@@ -18,11 +18,15 @@ const userSchema = new mongoose.Schema(
   {
     name:       { type: String, required: true, trim: true },
     email:      { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
-    // נבטיח שהשדה חוזר בשאילתא login ע"י .select('+password')
+    // יוחזר רק עם .select('+password')
     password:   { type: String, required: true, minlength: 6, select: false },
     role:       { type: String, enum: ['user', 'admin'], default: 'user', index: true },
     department: { type: String, default: '' },
     active:     { type: Boolean, default: true },
+
+    // ✅ אימוג'י פרופיל
+    profileEmoji: { type: String, default: '🙂' },
+
     permissions:{ type: permissionsSchema, default: () => ({}) },
   },
   { timestamps: true }

@@ -10,7 +10,8 @@ import toast from 'react-hot-toast';
 import About from './pages/About';
 import AdminUsers from './pages/AdminUsers';
 import Kiosk from './pages/Kiosk';
-import Presence from './pages/Presence'; // ← NEW
+import Presence from './pages/Presence'; // ← קיים אצלך
+import QRScan from './pages/QRScan';     // ← חדש
 
 function Login({ setToken }) {
   const [email, setEmail] = useState('');
@@ -101,10 +102,12 @@ export default function App() {
 
         <Routes>
           <Route path="/" element={authed ? <Dashboard /> : <Navigate to="/login" replace />} />
-          <Route path="/presence" element={authed ? <Presence /> : <Navigate to="/login" replace />} /> {/* NEW */}
+          <Route path="/presence" element={authed ? <Presence /> : <Navigate to="/login" replace />} />
           <Route path="/about" element={authed ? <About /> : <Navigate to="/login" replace />} />
           <Route path="/admin/users" element={authed ? <AdminUsers /> : <Navigate to="/login" replace />} />
-          <Route path="/kiosk" element={authed ? <Kiosk /> : <Navigate to="/login" replace />} /> {/* protect Kiosk */}
+          <Route path="/kiosk" element={authed ? <Kiosk /> : <Navigate to="/login" replace />} />
+          <Route path="/qr/auto" element={authed ? <QRScan /> : <Navigate to="/login" replace />} /> {/* ← חדש */}
+
           <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
           <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
           <Route path="*" element={<Navigate to="/" replace />} />
