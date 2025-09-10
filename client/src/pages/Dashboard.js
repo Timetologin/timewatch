@@ -1,6 +1,5 @@
 // client/src/pages/Dashboard.js
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import QuickActions from '../components/QuickActions';
 import StatsCharts from '../components/StatsCharts';
 import AttendanceTable from '../components/AttendanceTable';
@@ -8,7 +7,7 @@ import { api } from '../api';
 import toast from 'react-hot-toast';
 import BypassBanner from '../components/BypassBanner';
 
-// helpers
+// ---- Helpers ----
 function dayISO(d = new Date()) {
   const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return x.toISOString().slice(0, 10);
@@ -52,17 +51,16 @@ function secondsOfRow(r, now = new Date()) {
 function hasActiveSession(r) {
   if (Array.isArray(r.sessions) && r.sessions.length) {
     const last = r.sessions[r.sessions.length - 1];
-    if (last?.start && !last?.end) return true;
-  } else if (r.clockIn && !r.clockOut) {
-    return true;
+    return !!(last?.start && !last?.end);
   }
-  return false;
+  return !!(r.clockIn && !r.clockOut);
 }
 
+// ---- KPIs with live seconds ----
 function KPIs() {
   const [rows, setRows] = useState([]);
   const [late, setLate] = useState(0);
-  const [tick, setTick] = useState(0);
+  const [tick, setTick] = useState(0); // מתקתק כל שנייה בשביל "לייב"
 
   const load = async () => {
     try {
@@ -78,6 +76,7 @@ function KPIs() {
           ? data.data
           : [];
 
+      // Late entries: כניסה ראשונה אחרי 09:15
       const lateCount = arr.filter((r) => {
         let firstIn = null;
         if (Array.isArray(r.sessions) && r.sessions.length) {
@@ -104,21 +103,25 @@ function KPIs() {
     return () => window.removeEventListener('attendance-changed', onChanged);
   }, []);
 
+  // מתקתק כל שנייה כדי לחשב “לייב”
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 1000);
     return () => clearInterval(t);
   }, []);
 
+  // חישוב “חי” לפי השעה הנוכחית
   const { todaySec, weekSec, monthSec } = useMemo(() => {
     const now = new Date();
     const todayKey = dayISO(now);
+
     let today = 0, week = 0;
     for (const r of rows) {
       const s = secondsOfRow(r, now);
       week += s;
       if (r.date === todayKey) today += s;
     }
-    const month = week; // sample
+    // Month (sample) – כרגע משתמש באותם 7 ימים (כמו שהיה לפני), אפשר להרחיב בהמשך
+    const month = week;
     return { todaySec: today, weekSec: week, monthSec: month };
   }, [rows, tick]);
 
@@ -149,11 +152,8 @@ function KPIs() {
 export default function Dashboard() {
   return (
     <div className="container">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <h2 className="h2" style={{ marginRight: 'auto' }}>Dashboard</h2>
-        {/* קישור ריאקטיבי ל-Kiosk (ללא ריענון דף) */}
-        <Link to="/kiosk" className="btn-ghost">Kiosk</Link>
-      </div>
+      {/* בלי קישור Kiosk כאן */}
+      <h2 className="h2">Dashboard</h2>
       <div className="muted">Overview of attendance and productivity</div>
 
       <BypassBanner />
