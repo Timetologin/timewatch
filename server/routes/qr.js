@@ -4,7 +4,26 @@ const router = express.Router();
 
 const Attendance = require('../models/Attendance');
 const { authenticate } = require('../middleware/authMiddleware');
-const geo = require('../geo'); // משתמש בפונקציות מרוכזות: distanceMeters / withinRadiusMeters
+
+// ---- geo helpers (ללא תלות בקובץ חיצוני) ----
+function toRad(deg) { return (deg * Math.PI) / 180; }
+function distanceMeters(a, b) {
+  const R = 6371000; // meters
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const sin1 = Math.sin(dLat / 2);
+  const sin2 = Math.sin(dLng / 2);
+  const h =
+    sin1 * sin1 +
+    Math.cos(lat1) * Math.cos(lat2) * sin2 * sin2;
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return R * c;
+}
+function withinRadiusMeters(p, center, radiusM) {
+  return distanceMeters(p, center) <= radiusM;
+}
 
 // ---------- helpers ----------
 function readRadius() {
@@ -12,7 +31,7 @@ function readRadius() {
   if (Number.isFinite(m)) return m;
   const mm = Number(process.env.OFFICE_RADIUS_METERS);
   if (Number.isFinite(mm)) return mm;
-  return 150; // ברירת מחדל סבירה
+  return 150;
 }
 const OFFICE = {
   lat: Number(process.env.OFFICE_LAT || 0),
@@ -25,7 +44,6 @@ const todayStr = (d = new Date()) =>
   new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
 function pickGeo(body = {}) {
-  // קורא גם משדות ישירים וגם מ-body.coords
   const lat =
     typeof body.lat === 'number'
       ? body.lat
@@ -61,45 +79,33 @@ router.use(authenticate);
 /**
  * POST /api/qr/clock
  * body: { mode: 'in'|'out'|'break-start'|'break-end', lat?, lng?, coords? }
- * תומך בריבוי משמרות (sessions) + תאימות לשדות legacy.
  */
 router.post('/clock', async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
     if (!userId) return res.status(401).json({ message: 'Not authenticated' });
 
-    // BYPASS permissions: כמה שמות אפשריים + admin
+    // BYPASS permissions + admin
     const perms = (req.userDoc && req.userDoc.permissions) || {};
     const canBypass =
       !!(perms.attendanceBypassLocation || perms.bypassLocation || perms.locationBypass || perms.admin) ||
       !!req?.userDoc?.isAdmin;
 
-    // אם צריך לאכוף מיקום ואין BYPASS — נוודא קיום קואורדינטות ובתוך הרדיוס
+    // אכיפת מיקום אם נדרש ואין BYPASS
     if (mustEnforce() && !canBypass) {
       if (!Number.isFinite(OFFICE.lat) || !Number.isFinite(OFFICE.lng)) {
         return res.status(500).json({ message: 'Office location is not configured' });
       }
-
       const g = pickGeo(req.body);
       if (typeof g.lat !== 'number' || typeof g.lng !== 'number') {
         return res.status(400).json({ message: 'Location required' });
       }
-
-      const inside = typeof geo.withinRadiusMeters === 'function'
-        ? geo.withinRadiusMeters({ lat: g.lat, lng: g.lng }, { lat: OFFICE.lat, lng: OFFICE.lng }, OFFICE.radius)
-        : (typeof geo.distanceMeters === 'function'
-            ? geo.distanceMeters({ lat: g.lat, lng: g.lng }, { lat: OFFICE.lat, lng: OFFICE.lng }) <= OFFICE.radius
-            : true);
-
-      if (!inside) {
-        const distance = typeof geo.distanceMeters === 'function'
-          ? Math.round(geo.distanceMeters({ lat: g.lat, lng: g.lng }, { lat: OFFICE.lat, lng: OFFICE.lng }))
-          : undefined;
-
+      if (!withinRadiusMeters({ lat: g.lat, lng: g.lng }, { lat: OFFICE.lat, lng: OFFICE.lng }, OFFICE.radius)) {
+        const dist = Math.round(distanceMeters({ lat: g.lat, lng: g.lng }, { lat: OFFICE.lat, lng: OFFICE.lng }));
         return res.status(403).json({
           message: 'You are not at the office location',
           details: {
-            distanceMeters: distance,
+            distanceMeters: dist,
             radiusMeters: OFFICE.radius,
             office: { lat: OFFICE.lat, lng: OFFICE.lng },
             you: { lat: g.lat, lng: g.lng },
@@ -112,9 +118,7 @@ router.post('/clock', async (req, res) => {
     const date = todayStr();
 
     let doc = await Attendance.findOne({ user: userId, date });
-    if (!doc) {
-      doc = new Attendance({ user: userId, date, sessions: [] });
-    }
+    if (!doc) doc = new Attendance({ user: userId, date, sessions: [] });
 
     const now = new Date();
     const meta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
@@ -122,61 +126,37 @@ router.post('/clock', async (req, res) => {
 
     if (mode === 'in') {
       if (active) return res.status(400).json({ message: 'Already clocked in (session still open)' });
-
       doc.sessions.push({ start: now, inMeta: meta, breaks: [] });
-
-      // תאימות (legacy)
-      doc.clockIn = now;
-      doc.clockOut = null;
-      doc.breaks = [];
-      doc.clockInMeta = meta;
-
+      // תאימות legacy
+      doc.clockIn = now; doc.clockOut = null; doc.breaks = []; doc.clockInMeta = meta;
       await doc.save();
       return res.json({ message: 'Clocked in', attendance: doc });
     }
 
     if (mode === 'out') {
       if (!active) return res.status(400).json({ message: 'No open session to clock out' });
-
-      active.end = now;
-      active.outMeta = meta;
-
-      // תאימות
-      doc.clockOut = now;
-      doc.clockOutMeta = meta;
-
+      active.end = now; active.outMeta = meta;
+      doc.clockOut = now; doc.clockOutMeta = meta;
       await doc.save();
       return res.json({ message: 'Clocked out', attendance: doc });
     }
 
     if (mode === 'break-start') {
       if (!active) return res.status(400).json({ message: 'Must clock in before starting a break' });
-
       const lastBreak = active.breaks[active.breaks.length - 1];
-      if (lastBreak && !lastBreak.end) {
-        return res.status(400).json({ message: 'A break is already in progress' });
-      }
-
+      if (lastBreak && !lastBreak.end) return res.status(400).json({ message: 'A break is already in progress' });
       active.breaks.push({ start: now });
-      // תאימות
       doc.breaks = active.breaks;
-
       await doc.save();
       return res.json({ message: 'Break started', attendance: doc });
     }
 
     if (mode === 'break-end') {
       if (!active) return res.status(400).json({ message: 'Must clock in before ending a break' });
-
       const lastBreak = active.breaks[active.breaks.length - 1];
-      if (!lastBreak || lastBreak.end) {
-        return res.status(400).json({ message: 'No break in progress' });
-      }
-
+      if (!lastBreak || lastBreak.end) return res.status(400).json({ message: 'No break in progress' });
       lastBreak.end = now;
-      // תאימות
       doc.breaks = active.breaks;
-
       await doc.save();
       return res.json({ message: 'Break ended', attendance: doc });
     }

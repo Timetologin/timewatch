@@ -1,16 +1,28 @@
 // server/middleware/officeGuard.js
-const geo = require('../geo'); // משתמשים ב-withinRadiusMeters מה-geo שלך
+
+// ---- geo helpers (ללא תלות בקובץ חיצוני) ----
+function toRad(deg) { return (deg * Math.PI) / 180; }
+function distanceMeters(a, b) {
+  const R = 6371000; // meters
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const sin1 = Math.sin(dLat / 2);
+  const sin2 = Math.sin(dLng / 2);
+  const h =
+    sin1 * sin1 +
+    Math.cos(lat1) * Math.cos(lat2) * sin2 * sin2;
+  const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return R * c;
+}
+function withinRadiusMeters(p, center, radiusM) {
+  return distanceMeters(p, center) <= radiusM;
+}
 
 /**
  * אוכף שהפעולה מתבצעת בטווח המשרד, אלא אם למשתמש יש הרשאת BYPASS.
  * קורא lat/lng גם מ-body.lat/lng וגם מ-body.coords.lat/lng.
- * סביבת הפעלה:
- *  - OFFICE_LAT / OFFICE_LNG
- *  - OFFICE_RADIUS_M (או OFFICE_RADIUS_METERS)
- *  - ATTENDANCE_REQUIRE_OFFICE=1 כדי לאכוף
- * הרשאות BYPASS נתמכות בשמות שכיחים:
- *  - permissions.attendanceBypassLocation / bypassLocation / locationBypass
- *  - או אם יש לך דגל admin/isAdmin (נלקח בחשבון)
  */
 module.exports = (opts = {}) => {
   const officeLat =
@@ -32,8 +44,6 @@ module.exports = (opts = {}) => {
     try {
       const userDoc = req.userDoc || {};
       const perms = userDoc.permissions || {};
-
-      // BYPASS?
       const hasBypass =
         Boolean(
           perms.attendanceBypassLocation ||
@@ -43,9 +53,7 @@ module.exports = (opts = {}) => {
             perms.admin
         );
 
-      if (!requireGps || hasBypass) {
-        return next();
-      }
+      if (!requireGps || hasBypass) return next();
 
       if (!isFinite(officeLat) || !isFinite(officeLng)) {
         return res.status(500).json({ message: 'Office location is not configured' });
@@ -69,19 +77,16 @@ module.exports = (opts = {}) => {
         return res.status(400).json({ message: 'Missing GPS coordinates (lat/lng)' });
       }
 
-      const inside = geo.withinRadiusMeters(
+      const inside = withinRadiusMeters(
         { lat, lng },
         { lat: officeLat, lng: officeLng },
         radiusMeters
       );
 
       if (!inside) {
-        // אם קיימת פונקציית distanceMeters, נחזיר גם מרחק
-        const distance =
-          typeof geo.distanceMeters === 'function'
-            ? Math.round(geo.distanceMeters({ lat, lng }, { lat: officeLat, lng: officeLng }))
-            : undefined;
-
+        const distance = Math.round(
+          distanceMeters({ lat, lng }, { lat: officeLat, lng: officeLng })
+        );
         return res.status(403).json({
           message: 'Outside the office radius',
           details: {
@@ -93,9 +98,9 @@ module.exports = (opts = {}) => {
         });
       }
 
-      return next();
+      next();
     } catch (e) {
-      return res.status(500).json({ message: e.message || 'Office guard failed' });
+      res.status(500).json({ message: e.message || 'Office guard failed' });
     }
   };
 };
