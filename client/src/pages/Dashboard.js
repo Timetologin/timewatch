@@ -57,13 +57,18 @@ function rowHasActiveSession(r) {
   return !!(r.clockIn && !r.clockOut);
 }
 
-/* ---------- KPIs (עם "לייב" רק כשהיום פעיל) ---------- */
+/* ---------- KPIs (live רק כשבאמת IN) ---------- */
 function KPIs() {
   const [rows, setRows] = useState([]);
   const [late, setLate] = useState(0);
-  const [liveTick, setLiveTick] = useState(0); // יתקתק רק כשהיום פעיל
 
-  const load = async () => {
+  // live flags
+  const [liveTick, setLiveTick] = useState(0); // מונה שניות – עובד רק כשבאמת בלייב
+  const [liveByPresence, setLiveByPresence] = useState(false); // מהשרת
+  const [presenceDenied, setPresenceDenied] = useState(false); // אם אין הרשאה ל/presence
+
+  // --- טוען רשומות אחרונות (KPI + fallback ל-live) ---
+  const loadList = async () => {
     try {
       const to = new Date();
       const from = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
@@ -81,7 +86,7 @@ function KPIs() {
       const lateCount = arr.filter((r) => {
         let firstIn = null;
         if (Array.isArray(r.sessions) && r.sessions.length) {
-          const withStart = r.sessions.filter(s => s.start);
+          const withStart = r.sessions.filter((s) => s.start);
           if (withStart.length) firstIn = new Date(withStart[0].start);
         } else if (r.clockIn) {
           firstIn = new Date(r.clockIn);
@@ -97,27 +102,56 @@ function KPIs() {
     }
   };
 
+  // --- בדיקת live מהשרת (עדיפה, למניעת נתוני legacy פתוחים) ---
+  const checkPresence = async () => {
+    if (presenceDenied) return; // כבר ידוע שאין הרשאה – אל תנסה שוב
+    try {
+      const { data } = await api.get('/attendance/presence', { params: { activeOnly: 1 } });
+      // אם המשתמש הנוכחי נמצא ברשימה – הוא בלייב
+      const me = await api.get('/auth/me').then((r) => r.data).catch(() => null);
+      const myId = me?._id || me?.id;
+      const found = Array.isArray(data?.rows) && myId
+        ? data.rows.some((r) => String(r?.user?.id) === String(myId))
+        : false;
+      setLiveByPresence(Boolean(found));
+    } catch (e) {
+      // אם אין הרשאה (403) – לא ננסה שוב, ונישאר עם fallback מקומי
+      if (e?.response?.status === 403) setPresenceDenied(true);
+      // שגיאות אחרות – נתעלם בשקט
+    }
+  };
+
   useEffect(() => {
-    load();
-    const onChanged = () => load();
+    loadList();
+    checkPresence();
+
+    const onChanged = () => {
+      // בכל שינוי נוכחות – נטען מחדש ונוודא סטטוס לייב
+      loadList();
+      checkPresence();
+    };
     window.addEventListener('attendance-changed', onChanged);
     return () => window.removeEventListener('attendance-changed', onChanged);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // מותר "לייב" רק אם יש סשן פעיל של היום
-  const liveToday = useMemo(() => {
+  // --- fallback: לייב לפי רשומת היום (אם אין הרשאה ל/presence) ---
+  const liveByTodayRow = useMemo(() => {
     const todayKey = dayISO(new Date());
     return rows.some((r) => r.date === todayKey && rowHasActiveSession(r));
   }, [rows]);
 
-  // מפעיל טיימר רק כאשר liveToday = true
+  // ה־live הסופי: עדיפות לשרת; אם אין הרשאה – נופל למקומי
+  const live = presenceDenied ? liveByTodayRow : liveByPresence;
+
+  // מפעיל טיימר רק כאשר live=true
   useEffect(() => {
-    if (!liveToday) return;
+    if (!live) return;
     const t = setInterval(() => setLiveTick((x) => x + 1), 1000);
     return () => clearInterval(t);
-  }, [liveToday]);
+  }, [live]);
 
-  // חישוב הערכים; רנדר כל שנייה רק כאשר liveToday
+  // חישוב הערכים; “טיק” רק כשהלייב פעיל
   const { todaySec, weekSec, monthSec } = useMemo(() => {
     const now = new Date();
     const todayKey = dayISO(now);
@@ -128,15 +162,14 @@ function KPIs() {
       week += s;
       if (r.date === todayKey) today += s;
     }
-    const month = week; // "sample" (כמו שהיה)
+    const month = week; // "sample" כבעבר
     return { todaySec: today, weekSec: week, monthSec: month };
-    // תלוי ב-liveTick רק כשיש היום פעיל
-  }, [rows, liveToday ? liveTick : 0]);
+  }, [rows, live ? liveTick : 0]);
 
   return (
     <div className="kpis" style={{ marginTop: 16 }}>
       <div className="kpi">
-        <div className="label">Today {liveToday ? '• live' : ''}</div>
+        <div className="label">Today {live ? '• live' : ''}</div>
         <div className="value">{fmtHMS(todaySec)}</div>
       </div>
       <div className="kpi">
