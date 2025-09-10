@@ -13,7 +13,7 @@ function dayISO(d = new Date()) {
   return x.toISOString().slice(0, 10);
 }
 function fmtHMS(totalSeconds) {
-  const s = Math.max(0, Math.round(totalSeconds || 0));
+  const s = Math.max(0, Math.floor(totalSeconds || 0)); // FLOOR – אין דילוגים
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
@@ -24,18 +24,18 @@ function secondsOfBreaks(breaks = [], now = new Date()) {
     if (!b.start) return sum;
     const start = new Date(b.start);
     const end = b.end ? new Date(b.end) : now;
-    const dur = Math.max(0, Math.round((end - start) / 1000));
+    const dur = Math.max(0, Math.floor((end - start) / 1000)); // FLOOR
     return sum + dur;
   }, 0);
 }
 function secondsOfRow(r, now = new Date()) {
-  // סכימת זמן עבודה נטו בשורה (תומך sessions ולגאסי)
+  // סכימת זמן עבודה נטו (תומך sessions ולגאסי)
   if (Array.isArray(r.sessions) && r.sessions.length) {
     return r.sessions.reduce((sum, seg) => {
       if (!seg?.start) return sum;
       const start = new Date(seg.start);
       const end = seg.end ? new Date(seg.end) : now;
-      const total = Math.max(0, Math.round((end - start) / 1000));
+      const total = Math.max(0, Math.floor((end - start) / 1000)); // FLOOR
       const bsum = secondsOfBreaks(seg.breaks || [], now);
       return sum + Math.max(0, total - bsum);
     }, 0);
@@ -44,7 +44,7 @@ function secondsOfRow(r, now = new Date()) {
   if (r.clockIn) {
     const start = new Date(r.clockIn);
     const end = r.clockOut ? new Date(r.clockOut) : now;
-    total = Math.max(0, Math.round((end - start) / 1000));
+    total = Math.max(0, Math.floor((end - start) / 1000)); // FLOOR
   }
   const bsum = secondsOfBreaks(r.breaks || [], now);
   return Math.max(0, total - bsum);
@@ -57,17 +57,16 @@ function rowHasActiveSession(r) {
   return !!(r.clockIn && !r.clockOut);
 }
 
-/* ---------- KPIs (live רק כשבאמת IN) ---------- */
+/* ---------- KPIs (live מדויק וחלק) ---------- */
 function KPIs() {
   const [rows, setRows] = useState([]);
   const [late, setLate] = useState(0);
 
-  // live flags
-  const [liveTick, setLiveTick] = useState(0); // מונה שניות – עובד רק כשבאמת בלייב
-  const [liveByPresence, setLiveByPresence] = useState(false); // מהשרת
-  const [presenceDenied, setPresenceDenied] = useState(false); // אם אין הרשאה ל/presence
+  const [liveTick, setLiveTick] = useState(0);      // טריגר רינדור
+  const [liveByPresence, setLiveByPresence] = useState(false);
+  const [presenceDenied, setPresenceDenied] = useState(false);
 
-  // --- טוען רשומות אחרונות (KPI + fallback ל-live) ---
+  // טוען רשומות (KPI + fallback ללייב)
   const loadList = async () => {
     try {
       const to = new Date();
@@ -102,12 +101,11 @@ function KPIs() {
     }
   };
 
-  // --- בדיקת live מהשרת (עדיפה, למניעת נתוני legacy פתוחים) ---
+  // בדיקת live מהשרת (מדויק יותר)
   const checkPresence = async () => {
-    if (presenceDenied) return; // כבר ידוע שאין הרשאה – אל תנסה שוב
+    if (presenceDenied) return;
     try {
       const { data } = await api.get('/attendance/presence', { params: { activeOnly: 1 } });
-      // אם המשתמש הנוכחי נמצא ברשימה – הוא בלייב
       const me = await api.get('/auth/me').then((r) => r.data).catch(() => null);
       const myId = me?._id || me?.id;
       const found = Array.isArray(data?.rows) && myId
@@ -115,43 +113,41 @@ function KPIs() {
         : false;
       setLiveByPresence(Boolean(found));
     } catch (e) {
-      // אם אין הרשאה (403) – לא ננסה שוב, ונישאר עם fallback מקומי
-      if (e?.response?.status === 403) setPresenceDenied(true);
-      // שגיאות אחרות – נתעלם בשקט
+      if (e?.response?.status === 403) setPresenceDenied(true); // אין הרשאה → ניפול ל־fallback
     }
   };
 
   useEffect(() => {
     loadList();
     checkPresence();
-
-    const onChanged = () => {
-      // בכל שינוי נוכחות – נטען מחדש ונוודא סטטוס לייב
-      loadList();
-      checkPresence();
-    };
+    const onChanged = () => { loadList(); checkPresence(); };
     window.addEventListener('attendance-changed', onChanged);
     return () => window.removeEventListener('attendance-changed', onChanged);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- fallback: לייב לפי רשומת היום (אם אין הרשאה ל/presence) ---
+  // fallback: לפי רשומת היום בלבד
   const liveByTodayRow = useMemo(() => {
     const todayKey = dayISO(new Date());
     return rows.some((r) => r.date === todayKey && rowHasActiveSession(r));
   }, [rows]);
 
-  // ה־live הסופי: עדיפות לשרת; אם אין הרשאה – נופל למקומי
+  // ה־live הסופי
   const live = presenceDenied ? liveByTodayRow : liveByPresence;
 
-  // מפעיל טיימר רק כאשר live=true
+  // טיימר – מתוזמן בדיוק לגבול השנייה (ללא דילוגים)
   useEffect(() => {
     if (!live) return;
-    const t = setInterval(() => setLiveTick((x) => x + 1), 1000);
-    return () => clearInterval(t);
+    let t;
+    const schedule = () => {
+      const now = Date.now();
+      const delay = 1000 - (now % 1000) + 5;
+      t = window.setTimeout(() => { setLiveTick((x) => x + 1); schedule(); }, delay);
+    };
+    schedule();
+    return () => window.clearTimeout(t);
   }, [live]);
 
-  // חישוב הערכים; “טיק” רק כשהלייב פעיל
+  // חישוב הערכים; רינדור כל שנייה רק כשיש live
   const { todaySec, weekSec, monthSec } = useMemo(() => {
     const now = new Date();
     const todayKey = dayISO(now);
@@ -162,7 +158,7 @@ function KPIs() {
       week += s;
       if (r.date === todayKey) today += s;
     }
-    const month = week; // "sample" כבעבר
+    const month = week; // “sample”
     return { todaySec: today, weekSec: week, monthSec: month };
   }, [rows, live ? liveTick : 0]);
 
