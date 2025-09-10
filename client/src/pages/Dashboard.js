@@ -12,6 +12,10 @@ function dayISO(d = new Date()) {
   const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return x.toISOString().slice(0, 10);
 }
+function endOfLocalDay(dateStr) {
+  // סוף היום המקומי של dateStr בפורמט YYYY-MM-DD
+  return new Date(`${dateStr}T23:59:59.999`);
+}
 function fmtHMS(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds || 0)); // FLOOR – אין דילוגים
   const h = Math.floor(s / 3600);
@@ -28,8 +32,13 @@ function secondsOfBreaks(breaks = [], now = new Date()) {
     return sum + dur;
   }, 0);
 }
-function secondsOfRow(r, now = new Date()) {
-  // סכימת זמן עבודה נטו (תומך sessions ולגאסי)
+/**
+ * מחשב זמן עבודה נטו לשורה, כאשר endRef הוא סוף הטווח
+ * (למשל "עכשיו" עבור היום, או סוף היום עבור ימים קודמים).
+ */
+function secondsOfRow(r, endRef) {
+  const now = endRef instanceof Date ? endRef : new Date();
+
   if (Array.isArray(r.sessions) && r.sessions.length) {
     return r.sessions.reduce((sum, seg) => {
       if (!seg?.start) return sum;
@@ -40,6 +49,7 @@ function secondsOfRow(r, now = new Date()) {
       return sum + Math.max(0, total - bsum);
     }, 0);
   }
+
   let total = 0;
   if (r.clockIn) {
     const start = new Date(r.clockIn);
@@ -73,7 +83,7 @@ function KPIs() {
       try {
         const { data } = await api.get('/auth/me');
         setMe(data || null);
-      } catch (e) {
+      } catch {
         toast.error('Failed to load profile');
       }
     })();
@@ -91,11 +101,10 @@ function KPIs() {
           to: dayISO(to),
           page: 1,
           limit: 500,
-          user: myId, // מוודא שמחזירים רק אותי גם אם אני אדמין
+          user: myId, // רק שלי גם אם אני אדמין
         },
       });
 
-      // גם אם השרת החזיר יותר, נסנן צד-לקוח ליתר ביטחון
       const myRowsRaw = Array.isArray(data?.rows)
         ? data.rows
         : Array.isArray(data?.data)
@@ -176,17 +185,19 @@ function KPIs() {
     return () => window.clearTimeout(t);
   }, [live]);
 
-  // חישוב הערכים רק על השורות שלי; רינדור כל שנייה רק כשיש live
+  // חישוב הערכים: היום = עד עכשיו; ימים קודמים = עד סוף אותו יום (לא "נמרחים" עם now)
   const { todaySec, weekSec, monthSec } = useMemo(() => {
     const now = new Date();
     const todayKey = dayISO(now);
     let today = 0, week = 0;
+
     for (const r of rows) {
-      const s = secondsOfRow(r, now);
+      const endForRow = (r.date === todayKey) ? now : endOfLocalDay(r.date);
+      const s = secondsOfRow(r, endForRow);
       week += s;
       if (r.date === todayKey) today += s;
     }
-    const month = week; // “sample”
+    const month = week; // “sample” כפי שהיה
     return { todaySec: today, weekSec: week, monthSec: month };
   }, [rows, live ? liveTick : 0]);
 
