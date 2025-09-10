@@ -7,12 +7,13 @@ function getGeo() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('Geolocation not supported'));
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve({
-        lat: Number(p.coords.latitude),
-        lng: Number(p.coords.longitude),
-        accuracy: p.coords.accuracy
-      }),
-      (err) => reject(new Error('Please allow location access to continue')),
+      (p) =>
+        resolve({
+          lat: Number(p.coords.latitude),
+          lng: Number(p.coords.longitude),
+          accuracy: p.coords.accuracy,
+        }),
+      () => reject(new Error('Please allow location access to continue')),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   });
@@ -30,8 +31,10 @@ export default function QRScan() {
 
         setStatus('Toggling attendance…');
         const { data } = await api.post('/attendance/toggle', {
-          lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy,
-          coords: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy }
+          lat: pos.lat,
+          lng: pos.lng,
+          accuracy: pos.accuracy,
+          coords: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy },
         });
 
         const msg = data?.message || (data?.toggled === 'in' ? 'Clocked in' : 'Clocked out');
@@ -48,13 +51,32 @@ export default function QRScan() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow p-6 text-center">
-        <img src="/logo.png" alt="logo" className="w-12 h-12 rounded-md mx-auto mb-3" />
-        <h1 className="text-xl font-bold mb-2">QR</h1>
-        {status && <div className="text-sm text-slate-600 mb-2">{status}</div>}
-        {result && <div className="text-emerald-700">{result}</div>}
-        <div className="text-xs text-slate-500 mt-4">
+    <div className="container" style={{ padding: 16 }}>
+      <div
+        className="card"
+        style={{
+          maxWidth: 440,
+          margin: '32px auto',
+          borderRadius: 16,
+          padding: 16,
+          textAlign: 'center',
+        }}
+      >
+        <img
+          src="/logo.png"
+          alt="Costoro"
+          style={{ width: 48, height: 48, objectFit: 'contain', borderRadius: 8, margin: '0 auto 8px' }}
+        />
+        <h2 className="h2" style={{ marginBottom: 4 }}>QR</h2>
+
+        {status && <div className="muted" style={{ marginTop: 6 }}>{status}</div>}
+        {result && (
+          <div style={{ marginTop: 8, color: '#047857', fontWeight: 600, fontSize: 16 }}>
+            {result}
+          </div>
+        )}
+
+        <div className="muted" style={{ marginTop: 12, fontSize: 12 }}>
           You can close this tab once done.
         </div>
       </div>
