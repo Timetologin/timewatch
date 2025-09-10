@@ -3,24 +3,22 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 
-const Attendance = require('../models/Attendance');        // ← שים לב לנתיב הנכון
+const Attendance = require('../models/Attendance');
+const User = require('../models/User');
 const { authenticate } = require('../middleware/authMiddleware');
 const officeGuard = require('../middleware/officeGuard');
 
-// קונפיג משרד מתוך ENV
-const officeOptions = {
-  officeLat: Number(process.env.OFFICE_LAT),
-  officeLng: Number(process.env.OFFICE_LNG),
-  radiusMeters: Number(process.env.OFFICE_RADIUS_M) || Number(process.env.OFFICE_RADIUS_METERS) || 200,
-  requireGps: Boolean(Number(process.env.ATTENDANCE_REQUIRE_OFFICE || 0)),
-};
+/* -------------------------------------------------------
+   Helpers
+------------------------------------------------------- */
 
-// ------- Helpers -------
 function dateKeyLocal(d = new Date()) {
+  // YYYY-MM-DD לפי זמן מקומי
   const off = d.getTimezoneOffset();
   const z = new Date(d.getTime() - off * 60000);
   return z.toISOString().slice(0, 10);
 }
+
 function pickGeo(body = {}) {
   const { lat, lng, accuracy, address } = body || {};
   const out = {};
@@ -30,11 +28,44 @@ function pickGeo(body = {}) {
   if (typeof address === 'string') out.address = address;
   return out;
 }
+
+function getActiveSession(doc) {
+  // מחזיר את הסשן הפתוח אם קיים (מחדש/לגאסי)
+  if (Array.isArray(doc?.sessions) && doc.sessions.length) {
+    const last = doc.sessions[doc.sessions.length - 1];
+    if (last?.start && !last?.end) return last;
+  }
+  if (doc?.clockIn && !doc?.clockOut) {
+    // תאימות לגרסה ישנה
+    return { start: doc.clockIn, breaks: doc.breaks || [] };
+  }
+  return null;
+}
+
+function secondsOfBreaks(breaks = [], now = new Date()) {
+  return (breaks || []).reduce((sum, b) => {
+    if (!b.start) return sum;
+    const start = new Date(b.start);
+    const end = b.end ? new Date(b.end) : now;
+    const dur = Math.max(0, Math.round((end - start) / 1000));
+    return sum + dur;
+  }, 0);
+}
+
+function elapsedOfSegment(seg, now = new Date()) {
+  if (!seg?.start) return 0;
+  const start = new Date(seg.start);
+  const end = seg.end ? new Date(seg.end) : now;
+  const total = Math.max(0, Math.round((end - start) / 1000));
+  const bsum = secondsOfBreaks(seg.breaks || [], now);
+  return Math.max(0, total - bsum);
+}
+
 function requireAnyPermission(perms = []) {
   return (req, res, next) => {
     try {
       const p = (req.userDoc && req.userDoc.permissions) || {};
-      const ok = perms.some(key => Boolean(p[key]));
+      const ok = perms.some((key) => Boolean(p[key]));
       if (!ok) return res.status(403).json({ message: 'Insufficient permissions' });
       next();
     } catch {
@@ -42,13 +73,22 @@ function requireAnyPermission(perms = []) {
     }
   };
 }
-function getActiveSession(doc) {
-  if (!doc?.sessions?.length) return null;
-  const last = doc.sessions[doc.sessions.length - 1];
-  return (last && last.start && !last.end) ? last : null;
-}
 
-// ------- Clock In -------
+// פרמטרי משרד מה־ENV
+const officeOptions = {
+  officeLat: Number(process.env.OFFICE_LAT),
+  officeLng: Number(process.env.OFFICE_LNG),
+  radiusMeters:
+    Number(process.env.OFFICE_RADIUS_M) ||
+    Number(process.env.OFFICE_RADIUS_METERS) ||
+    200,
+  requireGps: Boolean(Number(process.env.ATTENDANCE_REQUIRE_OFFICE || 0)),
+};
+
+/* -------------------------------------------------------
+   Clock In / Out + Breaks (כמו שהיה)
+------------------------------------------------------- */
+
 router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
@@ -67,19 +107,23 @@ router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, re
         user: userId,
         date: today,
         sessions: [{ start: now, inMeta: meta, breaks: [] }],
+        // תאימות legacy
         clockIn: now,
         clockOut: null,
         breaks: [],
-        clockInMeta: meta
+        clockInMeta: meta,
       });
       await doc.save();
       return res.json({ ok: true, attendance: doc });
     }
 
     const active = getActiveSession(doc);
-    if (active) return res.status(400).json({ message: 'Already clocked in (session still open)' });
+    if (active) {
+      return res.status(400).json({ message: 'Already clocked in (session still open)' });
+    }
 
     doc.sessions.push({ start: now, inMeta: meta, breaks: [] });
+    // תאימות legacy
     doc.clockIn = now;
     doc.clockOut = null;
     doc.breaks = [];
@@ -93,7 +137,6 @@ router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, re
   }
 });
 
-// ------- Clock Out -------
 router.post('/clockout', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
@@ -112,6 +155,7 @@ router.post('/clockout', authenticate, officeGuard(officeOptions), async (req, r
     active.end = now;
     active.outMeta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
 
+    // תאימות legacy
     doc.clockOut = now;
     doc.clockOutMeta = active.outMeta;
 
@@ -123,7 +167,6 @@ router.post('/clockout', authenticate, officeGuard(officeOptions), async (req, r
   }
 });
 
-// ------- Break Start -------
 router.post('/break/start', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
@@ -144,7 +187,7 @@ router.post('/break/start', authenticate, officeGuard(officeOptions), async (req
     }
 
     active.breaks.push({ start: new Date() });
-    doc.breaks = active.breaks;
+    doc.breaks = active.breaks; // תאימות legacy
 
     await doc.save();
     return res.json({ ok: true, attendance: doc });
@@ -154,7 +197,6 @@ router.post('/break/start', authenticate, officeGuard(officeOptions), async (req
   }
 });
 
-// ------- Break End -------
 router.post('/break/end', authenticate, officeGuard(officeOptions), async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
@@ -175,7 +217,7 @@ router.post('/break/end', authenticate, officeGuard(officeOptions), async (req, 
     }
 
     lastBreak.end = new Date();
-    doc.breaks = active.breaks;
+    doc.breaks = active.breaks; // תאימות legacy
 
     await doc.save();
     return res.json({ ok: true, attendance: doc });
@@ -185,7 +227,10 @@ router.post('/break/end', authenticate, officeGuard(officeOptions), async (req, 
   }
 });
 
-// ------- Notes -------
+/* -------------------------------------------------------
+   Notes / List / Report
+------------------------------------------------------- */
+
 router.patch('/:id/notes', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
@@ -206,7 +251,6 @@ router.patch('/:id/notes', authenticate, async (req, res) => {
   }
 });
 
-// ------- List (עם populate כדי להחזיר שם/אימייל למשתמש) -------
 router.get('/list', authenticate, async (req, res) => {
   try {
     const perms = (req.userDoc && req.userDoc.permissions) || {};
@@ -231,7 +275,7 @@ router.get('/list', authenticate, async (req, res) => {
 
     const [rows, total] = await Promise.all([
       Attendance.find(q)
-        .populate('user', 'name email')   // ← פה מתבצע ה-populate
+        .populate('user', 'name email')
         .sort({ date: -1 })
         .skip((pg - 1) * lim)
         .limit(lim)
@@ -245,26 +289,101 @@ router.get('/list', authenticate, async (req, res) => {
   }
 });
 
-// ------- Report -------
-router.get('/report', authenticate, requireAnyPermission(['attendanceReadAll', 'reportExport']), async (req, res) => {
-  try {
-    const { from, to, userId } = req.query || {};
-    const q = {};
-    if (from || to) {
-      q.date = {};
-      if (from) q.date.$gte = from;
-      if (to) q.date.$lte = to;
+router.get(
+  '/report',
+  authenticate,
+  requireAnyPermission(['attendanceReadAll', 'reportExport']),
+  async (req, res) => {
+    try {
+      const { from, to, userId } = req.query || {};
+      const q = {};
+      if (from || to) {
+        q.date = {};
+        if (from) q.date.$gte = from;
+        if (to) q.date.$lte = to;
+      }
+      if (userId && mongoose.Types.ObjectId.isValid(userId)) q.user = userId;
+
+      const data = await Attendance.find(q)
+        .populate('user', 'name email department')
+        .sort({ date: -1, 'user.name': 1 });
+
+      return res.json({ ok: true, data });
+    } catch (err) {
+      console.error('report error', err);
+      return res.status(500).json({ message: 'Failed to load report' });
     }
-    if (userId && mongoose.Types.ObjectId.isValid(userId)) q.user = userId;
+  }
+);
 
-    const data = await Attendance.find(q)
+/* -------------------------------------------------------
+   NEW: Live Presence
+   GET /api/attendance/presence?activeOnly=1
+------------------------------------------------------- */
+
+router.get('/presence', authenticate, async (req, res) => {
+  try {
+    // הרשאות צפייה לכל הארגון (כמו בניווט)
+    const perms = (req.userDoc && req.userDoc.permissions) || {};
+    const canReadAll = !!(
+      perms.attendanceReadAll ||
+      perms.usersManage ||
+      perms.reportExport ||
+      perms.admin
+    );
+    if (!canReadAll) return res.status(403).json({ message: 'Insufficient permissions' });
+
+    const onlyActive = String((req.query || {}).activeOnly || '1') === '1';
+    const today = dateKeyLocal();
+
+    // מוצאים את כל מי שיש להם סשן פתוח היום
+    const actives = await Attendance.find({
+      date: today,
+      $or: [
+        { sessions: { $elemMatch: { start: { $exists: true }, end: { $exists: false } } } },
+        { $and: [{ clockIn: { $ne: null } }, { clockOut: null }] }, // תאימות legacy
+      ],
+    })
       .populate('user', 'name email department')
-      .sort({ date: -1, 'user.name': 1 });
+      .lean();
 
-    return res.json({ ok: true, data });
-  } catch (err) {
-    console.error('report error', err);
-    return res.status(500).json({ message: 'Failed to load report' });
+    const now = new Date();
+
+    // ממפים את התוצאות
+    const rows = actives.map((doc) => {
+      const seg = getActiveSession(doc);
+      const onBreak = (() => {
+        const lb = seg?.breaks?.[seg.breaks.length - 1];
+        return !!(lb && lb.start && !lb.end);
+      })();
+
+      return {
+        user: {
+          id: String(doc.user?._id || doc.user),
+          name: doc.user?.name || '',
+          email: doc.user?.email || '',
+          department: doc.user?.department || '',
+        },
+        active: !!seg,
+        since: seg?.start || null,
+        elapsedSeconds: seg ? elapsedOfSegment(seg, now) : 0,
+        onBreak,
+      };
+    });
+
+    // אם מבוקש – מציגים רק פעילים (ברירת המחדל)
+    const filtered = onlyActive ? rows.filter((r) => r.active) : rows;
+
+    // סדר: פעילים למעלה, אח"כ לפי זמן יורד
+    filtered.sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      return b.elapsedSeconds - a.elapsedSeconds;
+    });
+
+    res.json({ now, rows: filtered });
+  } catch (e) {
+    console.error('presence error', e);
+    res.status(500).json({ message: e.message || 'Failed to load presence' });
   }
 });
 
