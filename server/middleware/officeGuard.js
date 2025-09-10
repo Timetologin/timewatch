@@ -1,77 +1,101 @@
 // server/middleware/officeGuard.js
-//
-// Middleware לאכיפת מיקום משרד + עקיפה למורשים.
-//
-// ENV הנתמכים:
-//   ATTENDANCE_REQUIRE_OFFICE=1
-//   OFFICE_LAT=32.08040
-//   OFFICE_LNG=34.78070
-//   OFFICE_RADIUS_M=600   או   OFFICE_RADIUS_METERS=600
+const geo = require('../geo'); // משתמשים ב-withinRadiusMeters מה-geo שלך
 
-function toNum(v, def = NaN) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : def;
-}
+/**
+ * אוכף שהפעולה מתבצעת בטווח המשרד, אלא אם למשתמש יש הרשאת BYPASS.
+ * קורא lat/lng גם מ-body.lat/lng וגם מ-body.coords.lat/lng.
+ * סביבת הפעלה:
+ *  - OFFICE_LAT / OFFICE_LNG
+ *  - OFFICE_RADIUS_M (או OFFICE_RADIUS_METERS)
+ *  - ATTENDANCE_REQUIRE_OFFICE=1 כדי לאכוף
+ * הרשאות BYPASS נתמכות בשמות שכיחים:
+ *  - permissions.attendanceBypassLocation / bypassLocation / locationBypass
+ *  - או אם יש לך דגל admin/isAdmin (נלקח בחשבון)
+ */
+module.exports = (opts = {}) => {
+  const officeLat =
+    typeof opts.officeLat === 'number' ? opts.officeLat : Number(process.env.OFFICE_LAT);
+  const officeLng =
+    typeof opts.officeLng === 'number' ? opts.officeLng : Number(process.env.OFFICE_LNG);
 
-function readRadiusMeters(options) {
-  // סדר עדיפויות: options.radiusMeters -> OFFICE_RADIUS_M -> OFFICE_RADIUS_METERS -> 200
-  if (Number.isFinite(options?.radiusMeters)) return Number(options.radiusMeters);
-  const m = toNum(process.env.OFFICE_RADIUS_M);
-  if (Number.isFinite(m)) return m;
-  const mm = toNum(process.env.OFFICE_RADIUS_METERS);
-  if (Number.isFinite(mm)) return mm;
-  return 200;
-}
+  const radiusMeters =
+    typeof opts.radiusMeters === 'number'
+      ? opts.radiusMeters
+      : Number(process.env.OFFICE_RADIUS_M || process.env.OFFICE_RADIUS_METERS || 200);
 
-module.exports = function officeGuard(options = {}) {
-  const officeLat = toNum(options.officeLat, toNum(process.env.OFFICE_LAT));
-  const officeLng = toNum(options.officeLng, toNum(process.env.OFFICE_LNG));
-  const radiusMeters = readRadiusMeters(options);
-  const requireGps = typeof options.requireGps === 'boolean'
-    ? options.requireGps
-    : Boolean(Number(process.env.ATTENDANCE_REQUIRE_OFFICE || 0));
+  const requireGps =
+    typeof opts.requireGps === 'boolean'
+      ? opts.requireGps
+      : Boolean(Number(process.env.ATTENDANCE_REQUIRE_OFFICE || 0));
 
   return (req, res, next) => {
     try {
-      // BYPASS — למשתמשים מורשים
-      if (req?.userDoc?.permissions?.attendanceBypassLocation) {
-        req.locationBypassed = true;
+      const userDoc = req.userDoc || {};
+      const perms = userDoc.permissions || {};
+
+      // BYPASS?
+      const hasBypass =
+        Boolean(
+          perms.attendanceBypassLocation ||
+            perms.bypassLocation ||
+            perms.locationBypass ||
+            userDoc.isAdmin ||
+            perms.admin
+        );
+
+      if (!requireGps || hasBypass) {
         return next();
       }
 
-      const lat = toNum(req.body?.lat ?? req.query?.lat);
-      const lng = toNum(req.body?.lng ?? req.query?.lng);
-
-      if (requireGps && (!Number.isFinite(lat) || !Number.isFinite(lng))) {
-        return res.status(400).json({ message: 'Location required' });
+      if (!isFinite(officeLat) || !isFinite(officeLng)) {
+        return res.status(500).json({ message: 'Office location is not configured' });
       }
 
-      if (!Number.isFinite(officeLat) || !Number.isFinite(officeLng) || !Number.isFinite(radiusMeters)) {
-        return next();
+      const b = req.body || {};
+      const lat =
+        typeof b.lat === 'number'
+          ? b.lat
+          : b.coords && typeof b.coords.lat === 'number'
+          ? b.coords.lat
+          : undefined;
+      const lng =
+        typeof b.lng === 'number'
+          ? b.lng
+          : b.coords && typeof b.coords.lng === 'number'
+          ? b.coords.lng
+          : undefined;
+
+      if (typeof lat !== 'number' || typeof lng !== 'number') {
+        return res.status(400).json({ message: 'Missing GPS coordinates (lat/lng)' });
       }
 
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        return next();
+      const inside = geo.withinRadiusMeters(
+        { lat, lng },
+        { lat: officeLat, lng: officeLng },
+        radiusMeters
+      );
+
+      if (!inside) {
+        // אם קיימת פונקציית distanceMeters, נחזיר גם מרחק
+        const distance =
+          typeof geo.distanceMeters === 'function'
+            ? Math.round(geo.distanceMeters({ lat, lng }, { lat: officeLat, lng: officeLng }))
+            : undefined;
+
+        return res.status(403).json({
+          message: 'Outside the office radius',
+          details: {
+            distanceMeters: distance,
+            radiusMeters,
+            office: { lat: officeLat, lng: officeLng },
+            you: { lat, lng },
+          },
+        });
       }
 
-      const toRad = (v) => (v * Math.PI) / 180;
-      const R = 6371000;
-      const dLat = toRad(lat - officeLat);
-      const dLng = toRad(lng - officeLng);
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(officeLat)) * Math.cos(toRad(lat)) *
-        Math.sin(dLng / 2) ** 2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const distance = R * c;
-
-      if (distance > radiusMeters) {
-        return res.status(403).json({ message: 'Outside office radius' });
-      }
-
-      next();
+      return next();
     } catch (e) {
-      next(e);
+      return res.status(500).json({ message: e.message || 'Office guard failed' });
     }
   };
 };
