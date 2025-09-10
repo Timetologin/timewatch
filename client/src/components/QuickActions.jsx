@@ -57,8 +57,10 @@ export default function QuickActions() {
       const user = await ensureFreshUser();
       const hasBypass = user?.permissions?.attendanceBypassLocation === true;
 
-      // 2) payload – אם אין Bypass נבקש GPS; אם יש – לא
+      // 2) payload בסיסי
       let payload = { mode, locationId: 'main' };
+
+      // 3) אם אין BYPASS – נבקש GPS טרי; אם יש BYPASS ונשמר FIX אחרון, נצרף אותו כמטה (לא חובה)
       if (!hasBypass) {
         const pos = await getGeo(); // אם חסום – השגיאה תיתפס ב-catch
         setLastGps(pos);
@@ -68,9 +70,16 @@ export default function QuickActions() {
           lng: pos.lng,
           coords: { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy },
         };
+      } else if (lastGps && typeof lastGps.lat === 'number' && typeof lastGps.lng === 'number') {
+        payload = {
+          ...payload,
+          lat: lastGps.lat,
+          lng: lastGps.lng,
+          coords: { lat: lastGps.lat, lng: lastGps.lng, accuracy: lastGps.accuracy },
+        };
       }
 
-      // 3) קוראים **רק** לראוטי attendance (לא לקיוסק)
+      // 4) קוראים **רק** לראוטי attendance (לא לקיוסק)
       const routeMap = {
         in: '/attendance/clockin',
         out: '/attendance/clockout',
@@ -81,7 +90,7 @@ export default function QuickActions() {
       const { data } = await api.post(path, payload);
       toast.success(data?.message || 'Done');
 
-      // 4) משדרים אירוע ריענון גלובלי כדי שהדאשבורד יעדכן נתונים
+      // 5) משדרים אירוע ריענון גלובלי כדי שהדאשבורד יעדכן נתונים
       window.dispatchEvent(new CustomEvent('attendance-changed', { detail: { action: mode } }));
     } catch (e) {
       const msg =

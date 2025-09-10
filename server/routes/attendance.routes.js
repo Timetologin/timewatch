@@ -19,13 +19,16 @@ function dateKeyLocal(d = new Date()) {
   return z.toISOString().slice(0, 10);
 }
 
+// ⬅︎ עודכן: pickGeo קורא גם מ-body.coords וגם משדות עליונים
 function pickGeo(body = {}) {
-  const { lat, lng, accuracy, address } = body || {};
+  const src = body && typeof body === 'object'
+    ? (body.coords && typeof body.coords === 'object' ? body.coords : body)
+    : {};
   const out = {};
-  if (typeof lat === 'number') out.lat = lat;
-  if (typeof lng === 'number') out.lng = lng;
-  if (typeof accuracy === 'number') out.accuracy = accuracy;
-  if (typeof address === 'string') out.address = address;
+  if (typeof src.lat === 'number') out.lat = src.lat;
+  if (typeof src.lng === 'number') out.lng = src.lng;
+  if (typeof src.accuracy === 'number') out.accuracy = src.accuracy;
+  if (typeof src.address === 'string') out.address = src.address;
   return out;
 }
 
@@ -86,7 +89,7 @@ const officeOptions = {
 };
 
 /* -------------------------------------------------------
-   Clock In / Out + Breaks (כמו שהיה)
+   Clock In / Out + Breaks (כמו שהיה, עם מטא + pickGeo חדש)
 ------------------------------------------------------- */
 
 router.post('/clockin', authenticate, officeGuard(officeOptions), async (req, res) => {
@@ -152,12 +155,13 @@ router.post('/clockout', authenticate, officeGuard(officeOptions), async (req, r
     if (!active) return res.status(400).json({ message: 'No open session to clock out' });
 
     const now = new Date();
+    const meta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
     active.end = now;
-    active.outMeta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
+    active.outMeta = meta;
 
     // תאימות legacy
     doc.clockOut = now;
-    doc.clockOutMeta = active.outMeta;
+    doc.clockOutMeta = meta;
 
     await doc.save();
     return res.json({ ok: true, attendance: doc });
@@ -186,7 +190,8 @@ router.post('/break/start', authenticate, officeGuard(officeOptions), async (req
       return res.status(400).json({ message: 'A break is already in progress' });
     }
 
-    active.breaks.push({ start: new Date() });
+    const meta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
+    active.breaks.push({ start: new Date(), startMeta: meta });
     doc.breaks = active.breaks; // תאימות legacy
 
     await doc.save();
@@ -217,6 +222,7 @@ router.post('/break/end', authenticate, officeGuard(officeOptions), async (req, 
     }
 
     lastBreak.end = new Date();
+    lastBreak.endMeta = { ip: req.ip, ua: req.headers['user-agent'], geo: pickGeo(req.body) };
     doc.breaks = active.breaks; // תאימות legacy
 
     await doc.save();
@@ -317,7 +323,7 @@ router.get(
 );
 
 /* -------------------------------------------------------
-   NEW: Live Presence
+   Live Presence (כפי שהיה אצלך)
    GET /api/attendance/presence?activeOnly=1
 ------------------------------------------------------- */
 
