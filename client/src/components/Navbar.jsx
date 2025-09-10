@@ -146,7 +146,7 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         <button className="btn-ghost" onClick={handleLogout}>Logout</button>
       </nav>
 
-      {/* Burger for mobile */}
+      {/* Burger for mobile — עם טקסט MENU + אייקון המבורגר */}
       <button
         className="burger"
         aria-label="Menu"
@@ -154,9 +154,14 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         onClick={() => setMobileOpen(s => !s)}
         style={styles.burger}
       >
-        <div style={styles.burgerLine} />
-        <div style={styles.burgerLine} />
-        <div style={styles.burgerLine} />
+        <svg
+          width="22" height="22" viewBox="0 0 24 24"
+          fill="none" stroke="#0f172a" strokeWidth="2" strokeLinecap="round"
+          aria-hidden="true" focusable="false" style={{ marginRight: 8 }}
+        >
+          <path d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+        <span style={styles.burgerLabel}>Menu</span>
       </button>
 
       {/* Mobile panel */}
@@ -246,12 +251,18 @@ const styles = {
 
   burger: {
     marginLeft: 'auto',
-    height: 36, width: 42,
+    height: 36, padding: '0 12px',
     alignItems: 'center', justifyContent: 'center',
     border: '1px solid #e2e8f0', borderRadius: 10,
     background: '#fff', cursor: 'pointer',
+    display: 'none', // מוצג רק במובייל ע"י ה-CSS למעלה
   },
-  burgerLine: { height: 2, background: '#0f172a', margin: '4px 8px', borderRadius: 2 },
+  burgerLabel: {
+    fontSize: 14,
+    color: '#0f172a',
+    fontWeight: 600,
+    letterSpacing: .2,
+  },
 
   mobilePanel: {
     position: 'fixed',
