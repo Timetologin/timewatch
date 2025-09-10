@@ -56,7 +56,6 @@ export default function Navbar({ rightSlot = null, onLogout }) {
       const delay = 1000 - (now.getTime() % 1000) + 5;
       timer = window.setTimeout(tick, delay);
     };
-
     timer = window.setTimeout(tick, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -135,7 +134,7 @@ export default function Navbar({ rightSlot = null, onLogout }) {
           )}
         </div>
 
-        {/* Israel clock */}
+        {/* Israel clock – נשאר עם גרדיאנט “יוקרתי” */}
         <span className="il-clock" title={il.title} dir="ltr" aria-label="Israel time" style={styles.clock}>
           <span style={styles.flag}>🇮🇱</span>
           <span style={styles.digits}>{il.time}</span>
@@ -146,7 +145,7 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         <button className="btn-ghost" onClick={handleLogout}>Logout</button>
       </nav>
 
-      {/* Burger for mobile — עם טקסט MENU + אייקון המבורגר */}
+      {/* Burger for mobile — Menu + אייקון המבורגר */}
       <button
         className="burger"
         aria-label="Menu"
@@ -154,11 +153,9 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         onClick={() => setMobileOpen(s => !s)}
         style={styles.burger}
       >
-        <svg
-          width="22" height="22" viewBox="0 0 24 24"
-          fill="none" stroke="#0f172a" strokeWidth="2" strokeLinecap="round"
-          aria-hidden="true" focusable="false" style={{ marginRight: 8 }}
-        >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false"
+             style={{ marginRight: 8 }}>
           <path d="M4 6h16M4 12h16M4 18h16"/>
         </svg>
         <span style={styles.burgerLabel}>Menu</span>
@@ -177,7 +174,6 @@ export default function Navbar({ rightSlot = null, onLogout }) {
             <Link className={`m-link${isActive('/admin') ? ' active' : ''}`} to="/admin/users" style={styles.mLink}>Users</Link>
           )}
 
-          {/* אימוג'י במובייל */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
             <button className="btn-ghost" onClick={() => setShowPicker(s => !s)}>
               <span style={{ fontSize: 18, marginRight: 6 }}>{me?.profileEmoji || '🙂'}</span>
@@ -190,7 +186,6 @@ export default function Navbar({ rightSlot = null, onLogout }) {
             </div>
           )}
 
-          {/* שעון קטן במובייל */}
           <div style={{ marginTop: 8 }}>
             <span title={il.title} dir="ltr" aria-label="Israel time" style={styles.clockMobile}>
               <span style={{ marginRight: 6 }}>🇮🇱</span>
@@ -205,45 +200,23 @@ export default function Navbar({ rightSlot = null, onLogout }) {
           </button>
         </div>
       )}
-
-      {/* component-scoped styles */}
-      <style>{`
-        .link { color:#334155; text-decoration:none; padding:6px 8px; border-radius:8px; }
-        .link:hover { background:#f1f5f9; }
-        .link.active { background:#e2e8f0; color:#0f172a; }
-
-        .btn-ghost { background:transparent; border:1px solid #e2e8f0; padding:6px 10px; border-radius:8px; cursor:pointer; }
-        .btn-ghost:hover { background:#f8fafc; }
-
-        .btn { background:#0ea5e9; color:#fff; border:none; padding:8px 12px; border-radius:10px; cursor:pointer; }
-        .btn:hover { background:#0284c7; }
-
-        /* תצוגה: דסקטופ/מובייל */
-        @media (max-width: 900px) {
-          .nav-desktop { display: none !important; }
-          .burger { display: inline-flex !important; }
-        }
-        @media (min-width: 901px) {
-          .nav-desktop { display: flex !important; }
-          .burger { display: none !important; }
-        }
-      `}</style>
     </header>
   );
 }
 
-/* ---- inline styles ---- */
+/* ---- inline styles (מבוסס על משתני העיצוב החדשים) ---- */
 const styles = {
   navbar: {
     padding: '12px 16px',
     position: 'sticky',
     top: 0,
     zIndex: 30,
-    background: '#fff',
-    borderBottom: '1px solid #e2e8f0',
+    background: 'var(--navbar-bg)',
+    borderBottom: '1px solid var(--border)',
     display: 'flex',
     alignItems: 'center',
     gap: 12,
+    backdropFilter: 'saturate(140%) blur(8px)',
   },
   brand: { display: 'flex', alignItems: 'center', gap: 10 },
   logo: { height: 32, width: 32, borderRadius: 6, objectFit: 'contain' },
@@ -253,24 +226,19 @@ const styles = {
     marginLeft: 'auto',
     height: 36, padding: '0 12px',
     alignItems: 'center', justifyContent: 'center',
-    border: '1px solid #e2e8f0', borderRadius: 10,
-    background: '#fff', cursor: 'pointer',
-    display: 'none', // מוצג רק במובייל ע"י ה-CSS למעלה
+    border: '1px solid var(--border)', borderRadius: 10,
+    background: 'var(--surface)', color: 'var(--text)', cursor: 'pointer',
+    display: 'none',
   },
-  burgerLabel: {
-    fontSize: 14,
-    color: '#0f172a',
-    fontWeight: 600,
-    letterSpacing: .2,
-  },
+  burgerLabel: { fontSize: 14, fontWeight: 700, letterSpacing:.2 },
 
   mobilePanel: {
     position: 'fixed',
     top: 60, right: 12, left: 12,
-    border: '1px solid #e2e8f0',
-    borderRadius: 14,
-    background: '#fff',
-    boxShadow: '0 8px 24px rgba(2,6,23,.12)',
+    border: '1px solid var(--border)',
+    borderRadius: 16,
+    background: 'var(--surface)',
+    boxShadow: 'var(--shadow-lg)',
     padding: 12,
     display: 'grid',
     gap: 8,
@@ -278,10 +246,10 @@ const styles = {
   mLink: {
     textDecoration: 'none',
     padding: '10px 12px',
-    border: '1px solid #e2e8f0',
-    borderRadius: 10,
-    color: '#0f172a',
-    background: '#fff',
+    border: '1px solid var(--border)',
+    borderRadius: 12,
+    color: 'var(--text)',
+    background: 'var(--surface)',
   },
 
   pickerPop: { position: 'absolute', right: 0, top: 44, zIndex: 40 },
@@ -290,7 +258,7 @@ const styles = {
     display: 'inline-flex', alignItems: 'center', gap: 10,
     padding: '6px 12px', borderRadius: 12, color: '#fff',
     border: '1px solid rgba(255,255,255,.22)',
-    background: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 60%, #8b5cf6 100%)',
+    background: 'linear-gradient(135deg, var(--primary-1) 0%, var(--primary-2) 60%, var(--primary-3) 100%)',
     boxShadow: '0 10px 22px rgba(99,102,241,.25), inset 0 0 0 1px rgba(255,255,255,.25)',
   },
   flag: { fontSize: 14, filter: 'drop-shadow(0 1px 1px rgba(0,0,0,.25))' },
@@ -300,11 +268,22 @@ const styles = {
     fontWeight: 700, letterSpacing: '.6px', minWidth: 96, textAlign: 'center',
     textShadow: '0 1px 1px rgba(0,0,0,.25)',
   },
-  dateChip: { fontSize: 12, padding: '3px 8px', borderRadius: 999, background: 'rgba(255,255,255,.18)', color: 'rgba(255,255,255,.95)', whiteSpace: 'nowrap' },
-
+  dateChip: {
+    fontSize: 12, padding: '3px 8px', borderRadius: 999,
+    background: 'rgba(255,255,255,.18)', color: 'rgba(255,255,255,.95)',
+    whiteSpace: 'nowrap',
+  },
   clockMobile: {
     display: 'inline-flex', alignItems: 'center', gap: 6,
     padding: '6px 10px', borderRadius: 10,
-    background: '#f1f5f9', color: '#0f172a',
+    background: '#eef2ff', color: '#0f172a',
   },
 };
+
+/* הצגת burger רק במובייל */
+const styleEl = document.createElement('style');
+styleEl.innerHTML = `
+  @media (max-width: 900px){ .burger { display:inline-flex !important; } .nav-desktop{ display:none !important; } }
+  @media (min-width: 901px){ .burger { display:none !important; } .nav-desktop{ display:flex !important; } }
+`;
+document.head.appendChild(styleEl);
