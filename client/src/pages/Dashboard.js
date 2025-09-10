@@ -57,32 +57,58 @@ function rowHasActiveSession(r) {
   return !!(r.clockIn && !r.clockOut);
 }
 
-/* ---------- KPIs (live מדויק וחלק) ---------- */
+/* ---------- KPIs (רק של המשתמש הנוכחי, live חלק) ---------- */
 function KPIs() {
+  const [me, setMe] = useState(null);
   const [rows, setRows] = useState([]);
   const [late, setLate] = useState(0);
 
-  const [liveTick, setLiveTick] = useState(0);      // טריגר רינדור
+  const [liveTick, setLiveTick] = useState(0);      // טריגר רינדור כל שנייה
   const [liveByPresence, setLiveByPresence] = useState(false);
   const [presenceDenied, setPresenceDenied] = useState(false);
 
-  // טוען רשומות (KPI + fallback ללייב)
-  const loadList = async () => {
+  // נטען את המשתמש המחובר פעם אחת
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get('/auth/me');
+        setMe(data || null);
+      } catch (e) {
+        toast.error('Failed to load profile');
+      }
+    })();
+  }, []);
+
+  // טוען רשומות *שלי בלבד* ל-KPIs
+  const loadList = async (myId) => {
     try {
       const to = new Date();
       const from = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+
       const { data } = await api.get('/attendance/list', {
-        params: { from: dayISO(from), to: dayISO(to), page: 1, limit: 500 },
+        params: {
+          from: dayISO(from),
+          to: dayISO(to),
+          page: 1,
+          limit: 500,
+          user: myId, // מוודא שמחזירים רק אותי גם אם אני אדמין
+        },
       });
 
-      const arr = Array.isArray(data?.rows)
+      // גם אם השרת החזיר יותר, נסנן צד-לקוח ליתר ביטחון
+      const myRowsRaw = Array.isArray(data?.rows)
         ? data.rows
         : Array.isArray(data?.data)
           ? data.data
           : [];
 
+      const myRows = myRowsRaw.filter((r) => {
+        const uid = (r.user && (r.user._id || r.user.id || r.user)) || r.userId;
+        return String(uid) === String(myId);
+      });
+
       // איחורים: כניסה ראשונה אחרי 09:15
-      const lateCount = arr.filter((r) => {
+      const lateCount = myRows.filter((r) => {
         let firstIn = null;
         if (Array.isArray(r.sessions) && r.sessions.length) {
           const withStart = r.sessions.filter((s) => s.start);
@@ -94,44 +120,47 @@ function KPIs() {
         return firstIn.getHours() > 9 || (firstIn.getHours() === 9 && firstIn.getMinutes() > 15);
       }).length;
 
-      setRows(arr);
+      setRows(myRows);
       setLate(lateCount);
     } catch (e) {
       toast.error(e?.response?.data?.message || e?.message || 'Failed to load KPIs');
     }
   };
 
-  // בדיקת live מהשרת (מדויק יותר)
-  const checkPresence = async () => {
-    if (presenceDenied) return;
+  // בדיקת live מהשרת (מדויק ביותר) — רק שלי
+  const checkPresence = async (myId) => {
+    if (presenceDenied || !myId) return;
     try {
       const { data } = await api.get('/attendance/presence', { params: { activeOnly: 1 } });
-      const me = await api.get('/auth/me').then((r) => r.data).catch(() => null);
-      const myId = me?._id || me?.id;
-      const found = Array.isArray(data?.rows) && myId
+      const mine = Array.isArray(data?.rows)
         ? data.rows.some((r) => String(r?.user?.id) === String(myId))
         : false;
-      setLiveByPresence(Boolean(found));
+      setLiveByPresence(Boolean(mine));
     } catch (e) {
-      if (e?.response?.status === 403) setPresenceDenied(true); // אין הרשאה → ניפול ל־fallback
+      if (e?.response?.status === 403) setPresenceDenied(true); // אין הרשאה → ניפול ל-fallback
     }
   };
 
+  // טוען נתונים אחרי שיש לי את myId
   useEffect(() => {
-    loadList();
-    checkPresence();
-    const onChanged = () => { loadList(); checkPresence(); };
+    if (!me?._id && !me?.id) return;
+    const myId = me._id || me.id;
+    loadList(myId);
+    checkPresence(myId);
+
+    const onChanged = () => { loadList(myId); checkPresence(myId); };
     window.addEventListener('attendance-changed', onChanged);
     return () => window.removeEventListener('attendance-changed', onChanged);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me?._id, me?.id]);
 
-  // fallback: לפי רשומת היום בלבד
+  // fallback: live לפי רשומת היום *שלי בלבד*
   const liveByTodayRow = useMemo(() => {
     const todayKey = dayISO(new Date());
     return rows.some((r) => r.date === todayKey && rowHasActiveSession(r));
   }, [rows]);
 
-  // ה־live הסופי
+  // ה-live הסופי
   const live = presenceDenied ? liveByTodayRow : liveByPresence;
 
   // טיימר – מתוזמן בדיוק לגבול השנייה (ללא דילוגים)
@@ -147,12 +176,11 @@ function KPIs() {
     return () => window.clearTimeout(t);
   }, [live]);
 
-  // חישוב הערכים; רינדור כל שנייה רק כשיש live
+  // חישוב הערכים רק על השורות שלי; רינדור כל שנייה רק כשיש live
   const { todaySec, weekSec, monthSec } = useMemo(() => {
     const now = new Date();
     const todayKey = dayISO(now);
     let today = 0, week = 0;
-
     for (const r of rows) {
       const s = secondsOfRow(r, now);
       week += s;
