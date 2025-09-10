@@ -7,7 +7,7 @@ import { api } from '../api';
 import toast from 'react-hot-toast';
 import BypassBanner from '../components/BypassBanner';
 
-// ---- Helpers ----
+/* ---------- Helpers ---------- */
 function dayISO(d = new Date()) {
   const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return x.toISOString().slice(0, 10);
@@ -20,7 +20,7 @@ function fmtHMS(totalSeconds) {
   return `${h}h ${m}m ${sec}s`;
 }
 function secondsOfBreaks(breaks = [], now = new Date()) {
-  return breaks.reduce((sum, b) => {
+  return (breaks || []).reduce((sum, b) => {
     if (!b.start) return sum;
     const start = new Date(b.start);
     const end = b.end ? new Date(b.end) : now;
@@ -29,9 +29,10 @@ function secondsOfBreaks(breaks = [], now = new Date()) {
   }, 0);
 }
 function secondsOfRow(r, now = new Date()) {
+  // סכימת זמן עבודה נטו בשורה (תומך sessions ולגאסי)
   if (Array.isArray(r.sessions) && r.sessions.length) {
     return r.sessions.reduce((sum, seg) => {
-      if (!seg.start) return sum;
+      if (!seg?.start) return sum;
       const start = new Date(seg.start);
       const end = seg.end ? new Date(seg.end) : now;
       const total = Math.max(0, Math.round((end - start) / 1000));
@@ -48,7 +49,7 @@ function secondsOfRow(r, now = new Date()) {
   const bsum = secondsOfBreaks(r.breaks || [], now);
   return Math.max(0, total - bsum);
 }
-function hasActiveSession(r) {
+function rowHasActiveSession(r) {
   if (Array.isArray(r.sessions) && r.sessions.length) {
     const last = r.sessions[r.sessions.length - 1];
     return !!(last?.start && !last?.end);
@@ -56,11 +57,11 @@ function hasActiveSession(r) {
   return !!(r.clockIn && !r.clockOut);
 }
 
-// ---- KPIs with live seconds ----
+/* ---------- KPIs (עם "לייב" רק כשהיום פעיל) ---------- */
 function KPIs() {
   const [rows, setRows] = useState([]);
   const [late, setLate] = useState(0);
-  const [tick, setTick] = useState(0); // מתקתק כל שנייה בשביל "לייב"
+  const [liveTick, setLiveTick] = useState(0); // יתקתק רק כשהיום פעיל
 
   const load = async () => {
     try {
@@ -76,7 +77,7 @@ function KPIs() {
           ? data.data
           : [];
 
-      // Late entries: כניסה ראשונה אחרי 09:15
+      // איחורים: כניסה ראשונה אחרי 09:15
       const lateCount = arr.filter((r) => {
         let firstIn = null;
         if (Array.isArray(r.sessions) && r.sessions.length) {
@@ -103,34 +104,39 @@ function KPIs() {
     return () => window.removeEventListener('attendance-changed', onChanged);
   }, []);
 
-  // מתקתק כל שנייה כדי לחשב “לייב”
-  useEffect(() => {
-    const t = setInterval(() => setTick((x) => x + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
+  // מותר "לייב" רק אם יש סשן פעיל של היום
+  const liveToday = useMemo(() => {
+    const todayKey = dayISO(new Date());
+    return rows.some((r) => r.date === todayKey && rowHasActiveSession(r));
+  }, [rows]);
 
-  // חישוב “חי” לפי השעה הנוכחית
+  // מפעיל טיימר רק כאשר liveToday = true
+  useEffect(() => {
+    if (!liveToday) return;
+    const t = setInterval(() => setLiveTick((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [liveToday]);
+
+  // חישוב הערכים; רנדר כל שנייה רק כאשר liveToday
   const { todaySec, weekSec, monthSec } = useMemo(() => {
     const now = new Date();
     const todayKey = dayISO(now);
-
     let today = 0, week = 0;
+
     for (const r of rows) {
       const s = secondsOfRow(r, now);
       week += s;
       if (r.date === todayKey) today += s;
     }
-    // Month (sample) – כרגע משתמש באותם 7 ימים (כמו שהיה לפני), אפשר להרחיב בהמשך
-    const month = week;
+    const month = week; // "sample" (כמו שהיה)
     return { todaySec: today, weekSec: week, monthSec: month };
-  }, [rows, tick]);
-
-  const live = rows.some(hasActiveSession);
+    // תלוי ב-liveTick רק כשיש היום פעיל
+  }, [rows, liveToday ? liveTick : 0]);
 
   return (
     <div className="kpis" style={{ marginTop: 16 }}>
       <div className="kpi">
-        <div className="label">Today {live ? '• live' : ''}</div>
+        <div className="label">Today {liveToday ? '• live' : ''}</div>
         <div className="value">{fmtHMS(todaySec)}</div>
       </div>
       <div className="kpi">
@@ -149,10 +155,10 @@ function KPIs() {
   );
 }
 
+/* ---------- Page ---------- */
 export default function Dashboard() {
   return (
     <div className="container">
-      {/* בלי קישור Kiosk כאן */}
       <h2 className="h2">Dashboard</h2>
       <div className="muted">Overview of attendance and productivity</div>
 
