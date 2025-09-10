@@ -8,8 +8,9 @@ import Register from './pages/Register';
 import { api, handleApiError } from './api';
 import toast from 'react-hot-toast';
 import About from './pages/About';
-import AdminUsers from './pages/AdminUsers'; // ← NEW
+import AdminUsers from './pages/AdminUsers';
 import Kiosk from './pages/Kiosk';
+import Presence from './pages/Presence'; // ← NEW
 
 function Login({ setToken }) {
   const [email, setEmail] = useState('');
@@ -100,12 +101,13 @@ export default function App() {
 
         <Routes>
           <Route path="/" element={authed ? <Dashboard /> : <Navigate to="/login" replace />} />
+          <Route path="/presence" element={authed ? <Presence /> : <Navigate to="/login" replace />} /> {/* NEW */}
           <Route path="/about" element={authed ? <About /> : <Navigate to="/login" replace />} />
-          <Route path="/admin/users" element={authed ? <AdminUsers /> : <Navigate to="/login" replace />} /> {/* NEW */}
+          <Route path="/admin/users" element={authed ? <AdminUsers /> : <Navigate to="/login" replace />} />
+          <Route path="/kiosk" element={authed ? <Kiosk /> : <Navigate to="/login" replace />} /> {/* protect Kiosk */}
           <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
           <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
           <Route path="*" element={<Navigate to="/" replace />} />
-          <Route path="/kiosk" element={<Kiosk />} />
         </Routes>
       </BrowserRouter>
     </UIProvider>
