@@ -5,9 +5,10 @@ import { api } from '../api';
 
 /**
  * ניווט עליון ראשי:
- * - Dashboard / About / Kiosk / Users (מותנה בהרשאה usersManage)
- * - שם משתמש בצד ימין + Logout
- * - הדגשת לשונית פעילה
+ * - Dashboard / Live / About / Kiosk / Users*
+ * - *Users מוצג רק אם למשתמש יש הרשאת usersManage
+ * - מציג שם משתמש בצד ימין + Logout
+ * - מדגיש לשונית פעילה
  */
 export default function Navbar({ rightSlot = null, onLogout }) {
   const navigate = useNavigate();
@@ -22,7 +23,7 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         const { data } = await api.get('/auth/me');
         if (mounted) setMe(data);
       } catch {
-        // אם לא מאומת, ה-interceptor ידאג להפניה ללוגין
+        // אם לא מאומת, ה-interceptor יפנה ללוגין
       }
     })();
     return () => { mounted = false; };
@@ -42,8 +43,15 @@ export default function Navbar({ rightSlot = null, onLogout }) {
   };
 
   const canManageUsers = !!me?.permissions?.usersManage;
+  // מי יכול לראות את מסך ה-Live presence
+  const canSeePresence = !!(
+    me?.permissions?.attendanceReadAll ||
+    me?.permissions?.usersManage ||
+    me?.permissions?.reportExport ||
+    me?.permissions?.admin
+  );
 
-  // עוזר להדגשת לשונית פעילה
+  // הדגשת לשונית פעילה
   const isActive = (path) =>
     location.pathname === path || location.pathname.startsWith(path + '/');
 
@@ -58,6 +66,12 @@ export default function Navbar({ rightSlot = null, onLogout }) {
 
       <nav style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <Link className={`link${isActive('/') ? ' active' : ''}`} to="/">Dashboard</Link>
+
+        {/* לשונית Live (לוח נוכחות חי) רק למורשים */}
+        {canSeePresence && (
+          <Link className={`link${isActive('/presence') ? ' active' : ''}`} to="/presence">Live</Link>
+        )}
+
         <Link className={`link${isActive('/about') ? ' active' : ''}`} to="/about">About</Link>
 
         {/* לשונית Kiosk */}
