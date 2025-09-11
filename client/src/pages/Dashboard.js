@@ -187,62 +187,66 @@ function KPIs() {
     return { todaySec: today, weekSec: week, monthSec: month };
   }, [rows, live ? liveTick : 0]);
 
+  // ✨ אנימציית reveal בתוך הקומפוננטה
+  useEffect(() => {
+    const nodes = document.querySelectorAll('.reveal');
+    let i = 0;
+    nodes.forEach((el) => {
+      const delay = 40 * i++;
+      setTimeout(() => el.classList.add('show'), delay);
+    });
+  }, []);
+
   return (
-    <div className="grid">
-      <div className="span-12 card reveal" style={{ padding: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-          <h2 className="h2">Dashboard</h2>
-          <div className="muted">Overview of attendance and productivity</div>
-        </div>
-      </div>
-
-      <div className="span-12 card reveal" style={{ padding: 16 }}>
-        <BypassBanner />
-      </div>
-
-      <div className="span-12 card reveal" style={{ padding: 16 }}>
-        <QuickActions />
-      </div>
-
-      {/* KPIs + Charts */}
-      <div className="span-4 card reveal" style={{ padding: 16 }}>
-        <div className="kpis">
-          <div className="kpi">
-            <div className="label">Today {live ? '• live' : ''}</div>
-            <div className="value">{fmtHMS(todaySec)}</div>
-          </div>
-          <div className="kpi">
-            <div className="label">Last 7 days</div>
-            <div className="value">{fmtHMS(weekSec)}</div>
-          </div>
-          <div className="kpi">
-            <div className="label">Month (sample)</div>
-            <div className="value">{fmtHMS(monthSec)}</div>
-          </div>
-          <div className="kpi">
-            <div className="label">Late entries</div>
-            <div className="value">{late}</div>
+    <div className="container">
+      <div className="grid">
+        <div className="span-12 card reveal" style={{ padding: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+            <h2 className="h2">Dashboard</h2>
+            <div className="muted">Overview of attendance and productivity</div>
           </div>
         </div>
-      </div>
 
-      <div className="span-8 card reveal" style={{ padding: 8 }}>
-        <StatsCharts />
-      </div>
+        <div className="span-12 card reveal" style={{ padding: 16 }}>
+          <BypassBanner />
+        </div>
 
-      <div className="span-12 card reveal" style={{ padding: 8 }}>
-        <AttendanceTable />
+        <div className="span-12 card reveal" style={{ padding: 16 }}>
+          <QuickActions />
+        </div>
+
+        {/* KPIs + Charts */}
+        <div className="span-4 card reveal" style={{ padding: 16 }}>
+          <div className="kpis">
+            <div className="kpi">
+              <div className="label">Today {live ? '• live' : ''}</div>
+              <div className="value">{fmtHMS(todaySec)}</div>
+            </div>
+            <div className="kpi">
+              <div className="label">Last 7 days</div>
+              <div className="value">{fmtHMS(weekSec)}</div>
+            </div>
+            <div className="kpi">
+              <div className="label">Month (sample)</div>
+              <div className="value">{fmtHMS(monthSec)}</div>
+            </div>
+            <div className="kpi">
+              <div className="label">Late entries</div>
+              <div className="value">{late}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="span-8 card reveal" style={{ padding: 8 }}>
+          <StatsCharts />
+        </div>
+
+        <div className="span-12 card reveal" style={{ padding: 8 }}>
+          <AttendanceTable />
+        </div>
       </div>
     </div>
   );
 }
 
-/* הופעת reveal אוטומטית לאחר mount (למנוע קפיצה) */
-useEffect(() => {
-  const nodes = document.querySelectorAll('.reveal');
-  let i = 0;
-  for (const el of nodes) {
-    const delay = 40 * i++;
-    setTimeout(() => el.classList.add('show'), delay);
-  }
-}, []);
+export default Dashboard;
