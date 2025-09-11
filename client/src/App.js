@@ -14,6 +14,10 @@ import Presence from './pages/Presence';
 import QRScan from './pages/QRScan';
 import ThemeToggle from './components/ThemeToggle';
 
+// ✨ חדשים
+import TimeBackground from './components/TimeBackground';
+import GlobalClock from './components/GlobalClock';
+
 function Login({ setToken }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -113,7 +117,11 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 
-        {/* כפתור מצב כהה/בהיר – צף, לא פוגע בכלום */}
+        {/* ✨ שכבת רקע “שעון נוזל” + שעון גדול */}
+        <TimeBackground />
+        <GlobalClock />
+
+        {/* טוגל נושא */}
         <ThemeToggle />
       </BrowserRouter>
     </UIProvider>
