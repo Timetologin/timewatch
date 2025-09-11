@@ -187,7 +187,31 @@ function KPIs() {
     return { todaySec: today, weekSec: week, monthSec: month };
   }, [rows, live ? liveTick : 0]);
 
-  // ✨ אנימציית reveal בתוך הקומפוננטה
+  return (
+    <div className="kpis">
+      <div className="kpi">
+        <div className="label">Today {live ? '• live' : ''}</div>
+        <div className="value">{fmtHMS(todaySec)}</div>
+      </div>
+      <div className="kpi">
+        <div className="label">Last 7 days</div>
+        <div className="value">{fmtHMS(weekSec)}</div>
+      </div>
+      <div className="kpi">
+        <div className="label">Month (sample)</div>
+        <div className="value">{fmtHMS(monthSec)}</div>
+      </div>
+      <div className="kpi">
+        <div className="label">Late entries</div>
+        <div className="value">{late}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Page ---------- */
+export default function Dashboard() {
+  // אנימציית reveal – בתוך הקומפוננטה
   useEffect(() => {
     const nodes = document.querySelectorAll('.reveal');
     let i = 0;
@@ -215,28 +239,6 @@ function KPIs() {
           <QuickActions />
         </div>
 
-        {/* KPIs + Charts */}
-        <div className="span-4 card reveal" style={{ padding: 16 }}>
-          <div className="kpis">
-            <div className="kpi">
-              <div className="label">Today {live ? '• live' : ''}</div>
-              <div className="value">{fmtHMS(todaySec)}</div>
-            </div>
-            <div className="kpi">
-              <div className="label">Last 7 days</div>
-              <div className="value">{fmtHMS(weekSec)}</div>
-            </div>
-            <div className="kpi">
-              <div className="label">Month (sample)</div>
-              <div className="value">{fmtHMS(monthSec)}</div>
-            </div>
-            <div className="kpi">
-              <div className="label">Late entries</div>
-              <div className="value">{late}</div>
-            </div>
-          </div>
-        </div>
-
         <div className="span-8 card reveal" style={{ padding: 8 }}>
           <StatsCharts />
         </div>
@@ -248,5 +250,3 @@ function KPIs() {
     </div>
   );
 }
-
-export default Dashboard;
