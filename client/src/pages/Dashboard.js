@@ -13,11 +13,10 @@ function dayISO(d = new Date()) {
   return x.toISOString().slice(0, 10);
 }
 function endOfLocalDay(dateStr) {
-  // סוף היום המקומי של dateStr בפורמט YYYY-MM-DD
   return new Date(`${dateStr}T23:59:59.999`);
 }
 function fmtHMS(totalSeconds) {
-  const s = Math.max(0, Math.floor(totalSeconds || 0)); // FLOOR – אין דילוגים
+  const s = Math.max(0, Math.floor(totalSeconds || 0));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
@@ -28,14 +27,10 @@ function secondsOfBreaks(breaks = [], now = new Date()) {
     if (!b.start) return sum;
     const start = new Date(b.start);
     const end = b.end ? new Date(b.end) : now;
-    const dur = Math.max(0, Math.floor((end - start) / 1000)); // FLOOR
+    const dur = Math.max(0, Math.floor((end - start) / 1000));
     return sum + dur;
   }, 0);
 }
-/**
- * מחשב זמן עבודה נטו לשורה, כאשר endRef הוא סוף הטווח
- * (למשל "עכשיו" עבור היום, או סוף היום עבור ימים קודמים).
- */
 function secondsOfRow(r, endRef) {
   const now = endRef instanceof Date ? endRef : new Date();
 
@@ -44,7 +39,7 @@ function secondsOfRow(r, endRef) {
       if (!seg?.start) return sum;
       const start = new Date(seg.start);
       const end = seg.end ? new Date(seg.end) : now;
-      const total = Math.max(0, Math.floor((end - start) / 1000)); // FLOOR
+      const total = Math.max(0, Math.floor((end - start) / 1000));
       const bsum = secondsOfBreaks(seg.breaks || [], now);
       return sum + Math.max(0, total - bsum);
     }, 0);
@@ -54,7 +49,7 @@ function secondsOfRow(r, endRef) {
   if (r.clockIn) {
     const start = new Date(r.clockIn);
     const end = r.clockOut ? new Date(r.clockOut) : now;
-    total = Math.max(0, Math.floor((end - start) / 1000)); // FLOOR
+    total = Math.max(0, Math.floor((end - start) / 1000));
   }
   const bsum = secondsOfBreaks(r.breaks || [], now);
   return Math.max(0, total - bsum);
@@ -67,17 +62,16 @@ function rowHasActiveSession(r) {
   return !!(r.clockIn && !r.clockOut);
 }
 
-/* ---------- KPIs (רק של המשתמש הנוכחי, live חלק) ---------- */
+/* ---------- KPIs (של המשתמש הנוכחי) ---------- */
 function KPIs() {
   const [me, setMe] = useState(null);
   const [rows, setRows] = useState([]);
   const [late, setLate] = useState(0);
 
-  const [liveTick, setLiveTick] = useState(0);      // טריגר רינדור כל שנייה
+  const [liveTick, setLiveTick] = useState(0);
   const [liveByPresence, setLiveByPresence] = useState(false);
   const [presenceDenied, setPresenceDenied] = useState(false);
 
-  // נטען את המשתמש המחובר פעם אחת
   useEffect(() => {
     (async () => {
       try {
@@ -89,7 +83,6 @@ function KPIs() {
     })();
   }, []);
 
-  // טוען רשומות *שלי בלבד* ל-KPIs
   const loadList = async (myId) => {
     try {
       const to = new Date();
@@ -101,7 +94,7 @@ function KPIs() {
           to: dayISO(to),
           page: 1,
           limit: 500,
-          user: myId, // רק שלי גם אם אני אדמין
+          user: myId,
         },
       });
 
@@ -116,7 +109,6 @@ function KPIs() {
         return String(uid) === String(myId);
       });
 
-      // איחורים: כניסה ראשונה אחרי 09:15
       const lateCount = myRows.filter((r) => {
         let firstIn = null;
         if (Array.isArray(r.sessions) && r.sessions.length) {
@@ -136,7 +128,6 @@ function KPIs() {
     }
   };
 
-  // בדיקת live מהשרת (מדויק ביותר) — רק שלי
   const checkPresence = async (myId) => {
     if (presenceDenied || !myId) return;
     try {
@@ -146,11 +137,10 @@ function KPIs() {
         : false;
       setLiveByPresence(Boolean(mine));
     } catch (e) {
-      if (e?.response?.status === 403) setPresenceDenied(true); // אין הרשאה → ניפול ל-fallback
+      if (e?.response?.status === 403) setPresenceDenied(true);
     }
   };
 
-  // טוען נתונים אחרי שיש לי את myId
   useEffect(() => {
     if (!me?._id && !me?.id) return;
     const myId = me._id || me.id;
@@ -163,16 +153,13 @@ function KPIs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?._id, me?.id]);
 
-  // fallback: live לפי רשומת היום *שלי בלבד*
   const liveByTodayRow = useMemo(() => {
     const todayKey = dayISO(new Date());
     return rows.some((r) => r.date === todayKey && rowHasActiveSession(r));
   }, [rows]);
 
-  // ה-live הסופי
   const live = presenceDenied ? liveByTodayRow : liveByPresence;
 
-  // טיימר – מתוזמן בדיוק לגבול השנייה (ללא דילוגים)
   useEffect(() => {
     if (!live) return;
     let t;
@@ -185,7 +172,6 @@ function KPIs() {
     return () => window.clearTimeout(t);
   }, [live]);
 
-  // חישוב הערכים: היום = עד עכשיו; ימים קודמים = עד סוף אותו יום (לא "נמרחים" עם now)
   const { todaySec, weekSec, monthSec } = useMemo(() => {
     const now = new Date();
     const todayKey = dayISO(now);
@@ -197,44 +183,66 @@ function KPIs() {
       week += s;
       if (r.date === todayKey) today += s;
     }
-    const month = week; // “sample” כפי שהיה
+    const month = week;
     return { todaySec: today, weekSec: week, monthSec: month };
   }, [rows, live ? liveTick : 0]);
 
   return (
-    <div className="kpis" style={{ marginTop: 16 }}>
-      <div className="kpi">
-        <div className="label">Today {live ? '• live' : ''}</div>
-        <div className="value">{fmtHMS(todaySec)}</div>
+    <div className="grid">
+      <div className="span-12 card reveal" style={{ padding: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+          <h2 className="h2">Dashboard</h2>
+          <div className="muted">Overview of attendance and productivity</div>
+        </div>
       </div>
-      <div className="kpi">
-        <div className="label">Last 7 days</div>
-        <div className="value">{fmtHMS(weekSec)}</div>
+
+      <div className="span-12 card reveal" style={{ padding: 16 }}>
+        <BypassBanner />
       </div>
-      <div className="kpi">
-        <div className="label">Month (sample)</div>
-        <div className="value">{fmtHMS(monthSec)}</div>
+
+      <div className="span-12 card reveal" style={{ padding: 16 }}>
+        <QuickActions />
       </div>
-      <div className="kpi">
-        <div className="label">Late entries</div>
-        <div className="value">{late}</div>
+
+      {/* KPIs + Charts */}
+      <div className="span-4 card reveal" style={{ padding: 16 }}>
+        <div className="kpis">
+          <div className="kpi">
+            <div className="label">Today {live ? '• live' : ''}</div>
+            <div className="value">{fmtHMS(todaySec)}</div>
+          </div>
+          <div className="kpi">
+            <div className="label">Last 7 days</div>
+            <div className="value">{fmtHMS(weekSec)}</div>
+          </div>
+          <div className="kpi">
+            <div className="label">Month (sample)</div>
+            <div className="value">{fmtHMS(monthSec)}</div>
+          </div>
+          <div className="kpi">
+            <div className="label">Late entries</div>
+            <div className="value">{late}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="span-8 card reveal" style={{ padding: 8 }}>
+        <StatsCharts />
+      </div>
+
+      <div className="span-12 card reveal" style={{ padding: 8 }}>
+        <AttendanceTable />
       </div>
     </div>
   );
 }
 
-/* ---------- Page ---------- */
-export default function Dashboard() {
-  return (
-    <div className="container">
-      <h2 className="h2">Dashboard</h2>
-      <div className="muted">Overview of attendance and productivity</div>
-
-      <BypassBanner />
-      <QuickActions />
-      <KPIs />
-      <StatsCharts />
-      <AttendanceTable />
-    </div>
-  );
-}
+/* הופעת reveal אוטומטית לאחר mount (למנוע קפיצה) */
+useEffect(() => {
+  const nodes = document.querySelectorAll('.reveal');
+  let i = 0;
+  for (const el of nodes) {
+    const delay = 40 * i++;
+    setTimeout(() => el.classList.add('show'), delay);
+  }
+}, []);
