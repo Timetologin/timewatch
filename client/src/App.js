@@ -13,10 +13,7 @@ import Kiosk from './pages/Kiosk';
 import Presence from './pages/Presence';
 import QRScan from './pages/QRScan';
 import ThemeToggle from './components/ThemeToggle';
-
-// ✨ חדשים
-import TimeBackground from './components/TimeBackground';
-import GlobalClock from './components/GlobalClock';
+import GlobalClock from './components/GlobalClock'; // נשאר
 
 function Login({ setToken }) {
   const [email, setEmail] = useState('');
@@ -117,8 +114,8 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 
-        {/* ✨ שכבת רקע “שעון נוזל” + שעון גדול */}
-        <TimeBackground />
+        {/* ❌ בלי TimeBackground */}
+        {/* ✅ שעון גדול נשאר */}
         <GlobalClock />
 
         {/* טוגל נושא */}
