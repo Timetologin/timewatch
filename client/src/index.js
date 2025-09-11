@@ -3,7 +3,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 
-/* Viewport למובייל (אם חסר) */
+/* מוסיף meta viewport אם חסר (למובייל) */
 (function ensureViewport() {
   if (!document.querySelector('meta[name="viewport"]')) {
     const m = document.createElement('meta');
@@ -13,105 +13,126 @@ import App from './App';
   }
 })();
 
-/* ערכת נושא + רקע פסטלי-יוקרתי (לא לבן/אפור) כשכבה מאחור */
+/* ערכת נושא Sky/Mint עם רקע “חי” ועדין (ללא שינוי לוגיקה) */
 (function injectTheme() {
   const css = `
   :root{
-    --bg: #f6f7ff;         /* בסיס בהיר עם נטייה סגלגלה עדינה */
-    --text: #0f172a;
-    --text-muted:#64748b;
-    --border: rgba(2,6,23,.12);
+    /* בסיס */
+    --bg: #eefbff;         /* תכלת פסטלי */
+    --text: #0b1324;
+    --text-muted:#5b6b86;
+    --border: rgba(6,26,46,.12);
 
-    /* מותג/דגשים */
-    --primary-1:#0ea5e9;
-    --primary-2:#6366f1;
-    --primary-3:#8b5cf6;
-    --accent:#f59e0b;
+    /* פלטת Sky/Mint */
+    --primary-1:#06b6d4;   /* cyan */
+    --primary-2:#14b8a6;   /* teal */
+    --primary-3:#22d3ee;   /* sky */
+    --accent:#2dd4bf;      /* mint */
 
     /* משטחים */
     --surface:#ffffff;
-    --surface-2:#f1f5f9;
+    --surface-2:#f0f7fb;
     --surface-glass: rgba(255,255,255,.82);
     --navbar-bg: rgba(255,255,255,.88);
 
-    /* אפקטים/רדיאוס */
-    --ring: rgba(99,102,241,.40);
-    --shadow: 0 10px 24px rgba(2,6,23,.08);
-    --shadow-lg: 0 18px 34px rgba(2,6,23,.12);
+    /* אפקטים */
+    --ring: rgba(34,211,238,.45);
+    --shadow: 0 10px 24px rgba(6,26,46,.08);
+    --shadow-lg: 0 18px 34px rgba(6,26,46,.12);
     --radius:12px;
     --radius-lg:16px;
   }
 
-  /* מבטלים רקעים אחרים ומייצרים שכבת רקע מאחור שלא נדרסת */
+  /* מאפס רקעים ומכין שכבת “קנבס” מאחור שאי אפשר לדרוס */
   html, body, #root { height: 100%; background: transparent !important; }
   #root { isolation: isolate; position: relative; }
 
-  /* --- Pastel Luxury Background ---
-     שכבות רדיאליות צבעוניות ועדינות:
-     sky, lavender, mint, peach + בסיס פסטלי */
+  /* שכבת בסיס: גרדיאנט פסטלי (תכלת/מנטה) – יציב */
   #root::before{
-    content: "";
+    content:"";
     position: fixed;
     inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, #eafaff 0%, #ecfff8 40%, var(--bg) 100%);
+    /* “דיו” צבעוני מאוד עדין בשוליים */
+    box-shadow:
+      inset 0 240px 280px -220px rgba(56,189,248,.25),
+      inset 0 -240px 280px -220px rgba(45,212,191,.22);
+    background-attachment: fixed;
+  }
+
+  /* שכבה חיה: “בלובים” מטושטשים בתנועה איטית (עדין מאוד) */
+  #root::after{
+    content:"";
+    position: fixed;
+    inset: -10%;
     z-index: -1;
     pointer-events: none;
     background:
-      /* שמיים פסטל (כחלחל) בפינה שמאלית-עליונה */
-      radial-gradient(1200px 650px at -10% -10%, rgba(147,197,253,0.28), transparent 60%),
-      /* לבנדר פסטל בפינה ימנית-עליונה */
-      radial-gradient(1100px 600px at 110% -8%, rgba(196,181,253,0.26), transparent 60%),
-      /* מנטה עדינה למטה-שמאל */
-      radial-gradient(1000px 680px at -6% 112%, rgba(134,239,172,0.20), transparent 60%),
-      /* אפרסק/זהב רך למטה-ימין */
-      radial-gradient(900px 620px at 108% 118%, rgba(253,186,116,0.18), transparent 60%),
-      /* בסיס פסטלי לא-לבן: ורדרד->תכלת עדין */
-      linear-gradient(180deg, #fff0f7 0%, #eef7ff 55%, var(--bg) 100%);
-    background-attachment: fixed, fixed, fixed, fixed, fixed;
+      radial-gradient(28% 30% at 15% 25%, rgba(56,189,248,.30), transparent 60%),
+      radial-gradient(26% 28% at 82% 18%, rgba(45,212,191,.26), transparent 60%),
+      radial-gradient(24% 26% at 75% 78%, rgba(125,211,252,.22), transparent 60%),
+      radial-gradient(22% 24% at 24% 80%, rgba(94,234,212,.20), transparent 60%);
+    filter: blur(50px) saturate(1.05);
+    animation: float-bg 36s ease-in-out infinite alternate;
+  }
+  @keyframes float-bg {
+    0%   { transform: translate3d(0,0,0) rotate(0.0deg) scale(1); }
+    50%  { transform: translate3d(1.5%, -1.0%, 0) rotate(6deg) scale(1.02); }
+    100% { transform: translate3d(-1.5%, 1.0%, 0) rotate(-6deg) scale(1.01); }
   }
 
-  /* בסיס מבני */
+  /* קונטיינר/כרטיסים */
   .container{ max-width:1200px; margin:0 auto; padding:24px; }
   .card{
     background: var(--surface-glass);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
+    backdrop-filter: saturate(140%) blur(6px);
   }
+
   .h2{ margin:0; font-size:1.35rem; }
   .muted{ color: var(--text-muted); }
 
   /* קישורים */
   .link{
-    color:#334155; text-decoration:none;
+    color:#2c3e57; text-decoration:none;
     padding:6px 10px; border-radius:10px;
     transition: background .15s ease, color .15s ease, box-shadow .15s ease;
   }
-  .link:hover{ background:#eef2ff; color:#0f172a; }
-  .link.active{ background:#e0e7ff; color:#0f172a; box-shadow:0 0 0 2px rgba(99,102,241,.18) inset; }
+  .link:hover{ background: rgba(56,189,248,.10); color:#0b1324; }
+  .link.active{ background: rgba(45,212,191,.16); color:#0b1324; box-shadow:0 0 0 2px rgba(34,211,238,.25) inset; }
 
-  /* כפתורים */
+  /* כפתורים – גרדיאנט Sky/Mint “חי” */
   .btn{
     appearance:none; border:0; cursor:pointer; user-select:none;
     border-radius: var(--radius);
-    padding: 10px 14px; font-weight:600; color:#fff;
-    background-image: linear-gradient(135deg, var(--primary-1), var(--primary-2) 60%, var(--primary-3));
-    box-shadow: 0 8px 20px rgba(99,102,241,.25), inset 0 0 0 1px rgba(255,255,255,.25);
+    padding: 10px 14px; font-weight:700; color:#01202b;
+    background-image: linear-gradient(135deg, #a7f3d0, #67e8f9 45%, #22d3ee 80%);
+    box-shadow: 0 10px 24px rgba(34,211,238,.25), inset 0 0 0 1px rgba(255,255,255,.28);
     transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
   }
-  .btn:hover{ transform: translateY(-1px); filter: saturate(1.08);
-    box-shadow: 0 12px 26px rgba(99,102,241,.28), inset 0 0 0 1px rgba(255,255,255,.3);
+  .btn:hover{
+    transform: translateY(-1px);
+    filter: saturate(1.06);
+    box-shadow: 0 14px 28px rgba(34,211,238,.30), inset 0 0 0 1px rgba(255,255,255,.32);
   }
+  .btn:active{ transform: translateY(0); }
   .btn:focus-visible{ outline: none; box-shadow: 0 0 0 3px var(--ring); }
 
+  /* Ghost */
   .btn-ghost{
-    background: var(--surface);
+    background: rgba(255,255,255,.92);
     border: 1px solid var(--border);
     color: var(--text);
     border-radius: var(--radius);
     padding: 8px 12px;
     transition: background .15s ease, box-shadow .15s ease, transform .1s ease;
   }
-  .btn-ghost:hover{ background: var(--surface-2); box-shadow: 0 6px 16px rgba(2,6,23,.06); }
+  .btn-ghost:hover{ background: rgba(255,255,255,.98); box-shadow: 0 6px 16px rgba(6,26,46,.07); }
   .btn-ghost:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--ring); }
 
   /* טפסים */
@@ -127,9 +148,9 @@ import App from './App';
   /* טבלאות */
   table.table{ width:100%; border-collapse: collapse; }
   table.table th, table.table td{ padding:10px 12px; border-bottom:1px solid var(--border); }
-  table.table thead th{ background:#eef2ff; color:#0f172a; text-align:left; }
+  table.table thead th{ background: rgba(56,189,248,.10); color:#0b1324; text-align:left; }
 
-  /* Navbar */
+  /* Navbar – זכוכית עדינה */
   .navbar{
     background: var(--navbar-bg);
     backdrop-filter: saturate(140%) blur(8px);
@@ -146,7 +167,7 @@ import App from './App';
   }
   `;
   const style = document.createElement('style');
-  style.id = 'luxury-theme';
+  style.id = 'sky-mint-theme';
   style.innerHTML = css;
   document.head.appendChild(style);
 })();
