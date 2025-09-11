@@ -52,29 +52,13 @@ import App from './App';
 (function injectTheme() {
   const css = `
   :root{
-    --bg:#eaf9ff;
-    --text:#0b1324;
-    --text-muted:#5b6b86;
-    --border:rgba(6,26,46,.12);
-
+    --bg:#eaf9ff; --text:#0b1324; --text-muted:#5b6b86; --border:rgba(6,26,46,.12);
     --primary-1:#06b6d4; --primary-2:#14b8a6; --primary-3:#22d3ee; --accent:#2dd4bf;
-
     --surface:#fff; --surface-2:#f0f7fb; --surface-glass:rgba(255,255,255,.82); --navbar-bg:rgba(255,255,255,.88);
-
-    --ring:rgba(34,211,238,.45);
-    --shadow:0 10px 24px rgba(6,26,46,.08);
-    --shadow-lg:0 18px 34px rgba(6,26,46,.12);
+    --ring:rgba(34,211,238,.45); --shadow:0 10px 24px rgba(6,26,46,.08); --shadow-lg:0 18px 34px rgba(6,26,46,.12);
     --radius:12px; --radius-lg:16px;
-
     --anim-speed-1:36s; --anim-speed-2:52s; --anim-speed-3:75s;
-
     --toggle-bg:#fff; --toggle-fg:#0b1324;
-
-    /* 🔧 בקרה על צבע "ניאון" לשעון */
-    --neon-text:#111111;          /* טקסט שחור */
-    --neon-glow-1:rgba(0,0,0,.50);/* הילה כהה קרובה */
-    --neon-glow-2:rgba(0,0,0,.35);
-    --neon-glow-3:rgba(0,0,0,.20);
   }
   :root[data-theme="dark"]{
     --bg:#0b1324; --text:#e6f7ff; --text-muted:#9bb2c9; --border:rgba(255,255,255,.08);
@@ -82,18 +66,12 @@ import App from './App';
     --ring:rgba(34,211,238,.35);
     --shadow:0 10px 24px rgba(0,0,0,.35); --shadow-lg:0 18px 34px rgba(0,0,0,.45);
     --toggle-bg:#111827; --toggle-fg:#e6f7ff;
-
-    /* גם במצב כהה נשמור על טקסט שחור? עדיף מעט בהיר יותר לניגודיות */
-    --neon-text:#dbe8ef;
-    --neon-glow-1:rgba(0,0,0,.65);
-    --neon-glow-2:rgba(0,0,0,.45);
-    --neon-glow-3:rgba(0,0,0,.30);
   }
 
   html, body, #root { height:100%; background:transparent!important; color:var(--text); }
   #root { isolation:isolate; position:relative; }
 
-  /* רקע פסטלי מנטה/תכלת + בלובים עדינים */
+  /* רקע מנטה/תכלת + בלובים */
   #root::before{
     content:""; position:fixed; inset:0; z-index:-2; pointer-events:none;
     background:linear-gradient(180deg,#e8fbff 0%,#ecfff8 38%,var(--bg) 100%);
@@ -137,39 +115,47 @@ import App from './App';
     padding:10px 14px; border-radius:999px;
     background:var(--surface-glass); border:1px solid var(--border);
     backdrop-filter:saturate(140%) blur(8px); box-shadow:var(--shadow);
+    /* ברירת מחדל: ניאון שחור ע"י משתנים */
+    --neon-text:#111111;
+    --neon-glow-1:rgba(0,0,0,.50);
+    --neon-glow-2:rgba(0,0,0,.35);
+    --neon-glow-3:rgba(0,0,0,.20);
   }
+  .global-clock .controls{ display:flex; align-items:center; gap:8px; }
   .global-clock .dot{ width:8px; height:8px; border-radius:50%; background-image:radial-gradient(circle at 30% 30%, #a7f3d0, #22d3ee); box-shadow:0 0 0 2px rgba(34,211,238,.35); }
   .global-clock .time{ font-size:22px; font-weight:800; letter-spacing:.3px; }
   .global-clock .date{ font-size:12px; color:var(--text-muted); line-height:1.15; }
-
-  /* בחירת אזור זמן */
-  .global-clock .tz{
-    appearance:none;
-    border:1px solid var(--border);
-    background:rgba(255,255,255,.70);
-    color:var(--text);
-    border-radius:999px;
-    padding:6px 10px;
-    font-size:12px; font-weight:700;
-    outline:none;
+  .global-clock .tz, .global-clock .mode{
+    appearance:none; border:1px solid var(--border);
+    background:rgba(255,255,255,.70); color:var(--text);
+    border-radius:999px; padding:6px 10px; font-size:12px; font-weight:700; outline:none;
   }
-  :root[data-theme="dark"] .global-clock .tz{
-    background:rgba(16,23,42,.70);
-    color:var(--text);
+  :root[data-theme="dark"] .global-clock .tz,
+  :root[data-theme="dark"] .global-clock .mode{
+    background:rgba(16,23,42,.70); color:var(--text);
   }
 
-  /* ✨ "ניאון" שחור (הדגשה כהה) */
+  /* ✨ ניאון באמצעות משתנים */
   .global-clock .neon{
     color:var(--neon-text);
     text-shadow:
-      0 0 2px var(--neon-glow-1),
-      0 2px 4px var(--neon-glow-2),
-      0 4px 12px var(--neon-glow-3);
-    font-family: 'Orbitron', ui-monospace, monospace;
+      0 0 4px var(--neon-glow-1),
+      0 0 8px var(--neon-glow-2),
+      0 0 12px var(--neon-glow-3);
+    font-family:'Orbitron', ui-monospace, monospace;
   }
   .global-clock .digit{ display:inline-block; min-width:14px; animation:flip .6s ease forwards; }
 
-  /* מובייל: שיהיה בר רוחבי לכל העמודים, לא "נדבק" ל-navbar */
+  /* פריסטים */
+  .global-clock.style-cyan{
+    --neon-text:#e0faff;
+    --neon-glow-1:#22d3ee;
+    --neon-glow-2:#22d3ee;
+    --neon-glow-3:#06b6d4;
+  }
+  .global-clock.style-plain .neon{ text-shadow:none!important; color:var(--text)!important; }
+
+  /* מובייל – בר רוחבי */
   @media (max-width: 720px){
     .global-clock{
       left:10px; right:10px; top:66px; width:auto;
@@ -177,7 +163,7 @@ import App from './App';
     }
     .global-clock .time{ font-size:18px; }
     .global-clock .date{ font-size:11px; }
-    .global-clock .tz{ max-width:48%; }
+    .global-clock .tz, .global-clock .mode{ max-width:42vw; }
   }
 
   /* Reduced Motion + perf-lite */
