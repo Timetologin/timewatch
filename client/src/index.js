@@ -3,7 +3,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 
-/* מוסיף meta viewport אם חסר (למובייל) */
+/* Viewport למובייל (אם חסר) */
 (function ensureViewport() {
   if (!document.querySelector('meta[name="viewport"]')) {
     const m = document.createElement('meta');
@@ -13,12 +13,12 @@ import App from './App';
   }
 })();
 
-/* ערכת נושא Sky/Mint עם רקע “חי” ועדין (ללא שינוי לוגיקה) */
+/* ערכת נושא Sky/Mint PRO – רקע דינמי (בלובים, beams, גריין) ללא שינוי לוגיקה */
 (function injectTheme() {
   const css = `
   :root{
-    /* בסיס */
-    --bg: #eefbff;         /* תכלת פסטלי */
+    /* בסיס צבעוני */
+    --bg: #eaf9ff;           /* תכלת פסטלי בסיסי */
     --text: #0b1324;
     --text-muted:#5b6b86;
     --border: rgba(6,26,46,.12);
@@ -41,51 +41,108 @@ import App from './App';
     --shadow-lg: 0 18px 34px rgba(6,26,46,.12);
     --radius:12px;
     --radius-lg:16px;
+
+    /* בקרים לאנימציות (רק CSS) */
+    --anim-speed-1: 36s;
+    --anim-speed-2: 52s;
+    --anim-speed-3: 75s;
   }
 
-  /* מאפס רקעים ומכין שכבת “קנבס” מאחור שאי אפשר לדרוס */
+  /* לא ניתן לדרוס את הרקע: שכבות קבועות מאחור */
   html, body, #root { height: 100%; background: transparent !important; }
   #root { isolation: isolate; position: relative; }
 
-  /* שכבת בסיס: גרדיאנט פסטלי (תכלת/מנטה) – יציב */
+  /* שכבת בסיס – גרדיאנט תכלת→מנטה + “דיו” בשוליים */
   #root::before{
     content:"";
     position: fixed;
     inset: 0;
-    z-index: -2;
+    z-index: -3;
     pointer-events: none;
     background:
-      linear-gradient(180deg, #eafaff 0%, #ecfff8 40%, var(--bg) 100%);
-    /* “דיו” צבעוני מאוד עדין בשוליים */
+      linear-gradient(180deg, #e8fbff 0%, #ecfff8 38%, var(--bg) 100%);
     box-shadow:
-      inset 0 240px 280px -220px rgba(56,189,248,.25),
-      inset 0 -240px 280px -220px rgba(45,212,191,.22);
+      inset 0 260px 320px -240px rgba(56,189,248,.28),
+      inset 0 -260px 320px -240px rgba(45,212,191,.24);
     background-attachment: fixed;
   }
 
-  /* שכבה חיה: “בלובים” מטושטשים בתנועה איטית (עדין מאוד) */
+  /* בלובים – שכבה חיה עם פרלאקס (GPU-friendly) */
   #root::after{
     content:"";
     position: fixed;
-    inset: -10%;
-    z-index: -1;
+    inset: -12%;
+    z-index: -2;
     pointer-events: none;
     background:
-      radial-gradient(28% 30% at 15% 25%, rgba(56,189,248,.30), transparent 60%),
-      radial-gradient(26% 28% at 82% 18%, rgba(45,212,191,.26), transparent 60%),
-      radial-gradient(24% 26% at 75% 78%, rgba(125,211,252,.22), transparent 60%),
-      radial-gradient(22% 24% at 24% 80%, rgba(94,234,212,.20), transparent 60%);
-    filter: blur(50px) saturate(1.05);
-    animation: float-bg 36s ease-in-out infinite alternate;
-  }
-  @keyframes float-bg {
-    0%   { transform: translate3d(0,0,0) rotate(0.0deg) scale(1); }
-    50%  { transform: translate3d(1.5%, -1.0%, 0) rotate(6deg) scale(1.02); }
-    100% { transform: translate3d(-1.5%, 1.0%, 0) rotate(-6deg) scale(1.01); }
+      radial-gradient(28% 30% at 15% 22%, rgba(56,189,248,.34), transparent 60%),
+      radial-gradient(26% 28% at 85% 16%, rgba(45,212,191,.30), transparent 60%),
+      radial-gradient(24% 26% at 74% 82%, rgba(125,211,252,.26), transparent 60%),
+      radial-gradient(22% 24% at 22% 84%, rgba(94,234,212,.24), transparent 60%);
+    filter: blur(52px) saturate(1.06);
+    animation: float-a var(--anim-speed-1) ease-in-out infinite alternate;
+    will-change: transform;
   }
 
-  /* קונטיינר/כרטיסים */
+  /* beams (קרני גרדיאנט) – שכבה נוספת, איטית ואלגנטית */
+  body::before{
+    content:"";
+    position: fixed;
+    inset: -20%;
+    z-index: -2;
+    pointer-events: none;
+    background:
+      conic-gradient(from 210deg at 60% 40%, rgba(34,211,238,.12), transparent 35%),
+      conic-gradient(from 30deg  at 30% 70%, rgba(45,212,191,.12), transparent 40%);
+    filter: blur(30px);
+    animation: float-b var(--anim-speed-2) linear infinite;
+    will-change: transform;
+  }
+
+  /* שכבת גריין עדינה מאוד – עומק פרימיום */
+  body::after{
+    content:"";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events:none;
+    opacity:.06;
+    mix-blend-mode: soft-light;
+    background-image: url("data:image/svg+xml;utf8,\
+      <svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'>\
+        <filter id='n'>\
+          <feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/>\
+          <feColorMatrix type='saturate' values='0'/>\
+        </filter>\
+        <rect width='100%' height='100%' filter='url(%23n)' opacity='0.9'/>\
+      </svg>");
+    background-size: 260px 260px;
+    animation: grain var(--anim-speed-3) steps(10) infinite;
+  }
+
+  /* אנימציות */
+  @keyframes float-a {
+    0%   { transform: translate3d(0,0,0)   rotate(0deg)   scale(1);    }
+    40%  { transform: translate3d(1.8%, -1.2%, 0) rotate(5deg)  scale(1.02); }
+    100% { transform: translate3d(-1.8%, 1.2%, 0) rotate(-6deg) scale(1.015); }
+  }
+  @keyframes float-b {
+    0%   { transform: translate3d(0,0,0) rotate(0deg)   scale(1.05); }
+    100% { transform: translate3d(0,0,0) rotate(360deg) scale(1.05); }
+  }
+  @keyframes grain {
+    0% { transform: translate3d(0,0,0); }
+    100% { transform: translate3d(-10%, 10%, 0); }
+  }
+
+  /* נגישות: להפחית תנועה למי שמעדיף */
+  @media (prefers-reduced-motion: reduce){
+    #root::after, body::before, body::after { animation: none !important; }
+  }
+
+  /* מבנה/כרטיסים/טפסים/כפתורים – כמו קודם, רק מלוטש יותר */
   .container{ max-width:1200px; margin:0 auto; padding:24px; }
+
   .card{
     background: var(--surface-glass);
     border: 1px solid var(--border);
@@ -97,45 +154,40 @@ import App from './App';
   .h2{ margin:0; font-size:1.35rem; }
   .muted{ color: var(--text-muted); }
 
-  /* קישורים */
   .link{
     color:#2c3e57; text-decoration:none;
     padding:6px 10px; border-radius:10px;
     transition: background .15s ease, color .15s ease, box-shadow .15s ease;
   }
-  .link:hover{ background: rgba(56,189,248,.10); color:#0b1324; }
-  .link.active{ background: rgba(45,212,191,.16); color:#0b1324; box-shadow:0 0 0 2px rgba(34,211,238,.25) inset; }
+  .link:hover{ background: rgba(56,189,248,.12); color:#0b1324; }
+  .link.active{ background: rgba(45,212,191,.18); color:#0b1324; box-shadow:0 0 0 2px rgba(34,211,238,.25) inset; }
 
-  /* כפתורים – גרדיאנט Sky/Mint “חי” */
   .btn{
     appearance:none; border:0; cursor:pointer; user-select:none;
     border-radius: var(--radius);
-    padding: 10px 14px; font-weight:700; color:#01202b;
-    background-image: linear-gradient(135deg, #a7f3d0, #67e8f9 45%, #22d3ee 80%);
-    box-shadow: 0 10px 24px rgba(34,211,238,.25), inset 0 0 0 1px rgba(255,255,255,.28);
+    padding: 10px 14px; font-weight:800; letter-spacing:.2px; color:#01202b;
+    background-image: linear-gradient(135deg, #a7f3d0, #67e8f9 45%, #22d3ee 85%);
+    box-shadow: 0 12px 26px rgba(34,211,238,.28), inset 0 0 0 1px rgba(255,255,255,.32);
     transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
   }
   .btn:hover{
-    transform: translateY(-1px);
-    filter: saturate(1.06);
-    box-shadow: 0 14px 28px rgba(34,211,238,.30), inset 0 0 0 1px rgba(255,255,255,.32);
+    transform: translateY(-1.5px);
+    filter: saturate(1.08);
+    box-shadow: 0 16px 30px rgba(34,211,238,.34), inset 0 0 0 1px rgba(255,255,255,.36);
   }
-  .btn:active{ transform: translateY(0); }
   .btn:focus-visible{ outline: none; box-shadow: 0 0 0 3px var(--ring); }
 
-  /* Ghost */
   .btn-ghost{
-    background: rgba(255,255,255,.92);
+    background: rgba(255,255,255,.94);
     border: 1px solid var(--border);
     color: var(--text);
     border-radius: var(--radius);
     padding: 8px 12px;
     transition: background .15s ease, box-shadow .15s ease, transform .1s ease;
   }
-  .btn-ghost:hover{ background: rgba(255,255,255,.98); box-shadow: 0 6px 16px rgba(6,26,46,.07); }
+  .btn-ghost:hover{ background: rgba(255,255,255,.98); box-shadow: 0 6px 16px rgba(6,26,46,.08); }
   .btn-ghost:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--ring); }
 
-  /* טפסים */
   .input, input[type="text"], input[type="email"], input[type="password"], select, textarea{
     width:100%; border-radius: var(--radius); border:1px solid var(--border);
     padding:10px 12px; background:#fff; color:var(--text);
@@ -145,19 +197,16 @@ import App from './App';
     outline:none; border-color: transparent; box-shadow: 0 0 0 3px var(--ring);
   }
 
-  /* טבלאות */
   table.table{ width:100%; border-collapse: collapse; }
   table.table th, table.table td{ padding:10px 12px; border-bottom:1px solid var(--border); }
   table.table thead th{ background: rgba(56,189,248,.10); color:#0b1324; text-align:left; }
 
-  /* Navbar – זכוכית עדינה */
   .navbar{
     background: var(--navbar-bg);
     backdrop-filter: saturate(140%) blur(8px);
     border-bottom: 1px solid var(--border);
   }
 
-  /* מובייל */
   @media (max-width: 480px){
     .container{ padding-left:12px; padding-right:12px; }
     .card{ padding:12px; }
@@ -167,7 +216,7 @@ import App from './App';
   }
   `;
   const style = document.createElement('style');
-  style.id = 'sky-mint-theme';
+  style.id = 'sky-mint-pro-theme';
   style.innerHTML = css;
   document.head.appendChild(style);
 })();
