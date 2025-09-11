@@ -32,7 +32,7 @@ import App from './App';
   } catch {}
 })();
 
-/* מצב ביצועים */
+/* מצב ביצועים ידני + שמיעה לשינויים */
 (function initPerfMode() {
   try {
     const KEY = 'perfMode';
@@ -48,7 +48,38 @@ import App from './App';
   } catch {}
 })();
 
-/* CSS גלובלי */
+/* Pause אנימציות כשכרטיסייה מוסתרת (חוסך CPU) */
+(function initVisibilityPause() {
+  const onVis = () => {
+    document.documentElement.classList.toggle('paused', document.hidden);
+  };
+  document.addEventListener('visibilitychange', onVis);
+  onVis();
+})();
+
+/* Auto-Lite: מזהה FPS נמוך ומדליק perf-lite אוטומטי עד שהמצב משתפר */
+(function startAutoPerfWatch() {
+  let frames = 0, start = performance.now();
+  let poor = 0, good = 0;
+  function loop(t) {
+    if (!document.hidden) frames++;
+    const dt = t - start;
+    if (dt >= 2000) { // דגימה כל ~2 שניות
+      const fps = Math.round(frames * 1000 / dt);
+      frames = 0; start = t;
+      if (fps < 45) { poor++; good = 0; }
+      else if (fps > 53) { good++; poor = 0; }
+
+      const root = document.documentElement;
+      if (poor >= 2) root.classList.add('perf-lite-auto');         // שתי דגימות חלשות רצוף
+      else if (good >= 3) root.classList.remove('perf-lite-auto'); // שלוש חזקות רצוף – כבה
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+
+/* CSS גלובלי (שומר מראה, מוסיף בקרות blur/מצבים) */
 (function injectTheme() {
   const css = `
   :root{
@@ -59,12 +90,20 @@ import App from './App';
     --radius:12px; --radius-lg:16px;
     --anim-speed-1:36s; --anim-speed-2:52s; --anim-speed-3:75s;
     --toggle-bg:#fff; --toggle-fg:#0b1324;
+
+    /* שליטה ע"י משתנה – מאפשר הורדת blur במצבי חיסכון */
+    --blur: 8px;
+
+    /* ברירות מחדל לניאון (שחור – ניתן לשינוי ע"י מחלקת style-...) */
+    --neon-text:#111111;
+    --neon-glow-1:rgba(0,0,0,.50);
+    --neon-glow-2:rgba(0,0,0,.35);
+    --neon-glow-3:rgba(0,0,0,.20);
   }
   :root[data-theme="dark"]{
     --bg:#0b1324; --text:#e6f7ff; --text-muted:#9bb2c9; --border:rgba(255,255,255,.08);
     --surface:#0f172a; --surface-2:#0b1224; --surface-glass:rgba(16,23,42,.72); --navbar-bg:rgba(10,16,30,.76);
-    --ring:rgba(34,211,238,.35);
-    --shadow:0 10px 24px rgba(0,0,0,.35); --shadow-lg:0 18px 34px rgba(0,0,0,.45);
+    --ring:rgba(34,211,238,.35); --shadow:0 10px 24px rgba(0,0,0,.35); --shadow-lg:0 18px 34px rgba(0,0,0,.45);
     --toggle-bg:#111827; --toggle-fg:#e6f7ff;
   }
 
@@ -114,12 +153,11 @@ import App from './App';
     display:flex; align-items:center; gap:12px;
     padding:10px 14px; border-radius:999px;
     background:var(--surface-glass); border:1px solid var(--border);
-    backdrop-filter:saturate(140%) blur(8px); box-shadow:var(--shadow);
-    /* ברירת מחדל: ניאון שחור ע"י משתנים */
-    --neon-text:#111111;
-    --neon-glow-1:rgba(0,0,0,.50);
-    --neon-glow-2:rgba(0,0,0,.35);
-    --neon-glow-3:rgba(0,0,0,.20);
+    backdrop-filter:saturate(140%) blur(var(--blur));
+    box-shadow:var(--shadow);
+
+    /* ברירת מחדל לניאון שחור (ניתן להחלפה ע"י מחלקת style-...) */
+    --neon-text:#111111; --neon-glow-1:rgba(0,0,0,.50); --neon-glow-2:rgba(0,0,0,.35); --neon-glow-3:rgba(0,0,0,.20);
   }
   .global-clock .controls{ display:flex; align-items:center; gap:8px; }
   .global-clock .dot{ width:8px; height:8px; border-radius:50%; background-image:radial-gradient(circle at 30% 30%, #a7f3d0, #22d3ee); box-shadow:0 0 0 2px rgba(34,211,238,.35); }
@@ -135,7 +173,7 @@ import App from './App';
     background:rgba(16,23,42,.70); color:var(--text);
   }
 
-  /* ✨ ניאון באמצעות משתנים */
+  /* ✨ ניאון – לפי משתנים */
   .global-clock .neon{
     color:var(--neon-text);
     text-shadow:
@@ -146,14 +184,19 @@ import App from './App';
   }
   .global-clock .digit{ display:inline-block; min-width:14px; animation:flip .6s ease forwards; }
 
-  /* פריסטים */
+  /* פריסטים של סגנון */
   .global-clock.style-cyan{
-    --neon-text:#e0faff;
-    --neon-glow-1:#22d3ee;
-    --neon-glow-2:#22d3ee;
-    --neon-glow-3:#06b6d4;
+    --neon-text:#e0faff; --neon-glow-1:#22d3ee; --neon-glow-2:#22d3ee; --neon-glow-3:#06b6d4;
   }
   .global-clock.style-plain .neon{ text-shadow:none!important; color:var(--text)!important; }
+
+  /* כרטיסים ורכיבים */
+  .card{ background:var(--surface-glass); border:1px solid var(--border); border-radius:var(--radius-lg);
+         box-shadow:var(--shadow); backdrop-filter:saturate(140%) blur(var(--blur));
+         transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; }
+  .card:hover{ transform:translateY(-2px); box-shadow:var(--shadow-lg); }
+  .container{ max-width:1200px; margin:0 auto; padding:24px; }
+  .h2{ margin:0; font-size:1.35rem; } .muted{ color:var(--text-muted); }
 
   /* מובייל – בר רוחבי */
   @media (max-width: 720px){
@@ -166,22 +209,21 @@ import App from './App';
     .global-clock .tz, .global-clock .mode{ max-width:42vw; }
   }
 
-  /* Reduced Motion + perf-lite */
+  /* Reduced Motion + perf-lite + auto */
   @media (prefers-reduced-motion: reduce){
     #root::after, body::before, body::after{ animation:none!important; }
     .global-clock .digit{ animation:none!important; }
-    .card{ backdrop-filter:none!important; }
+    :root{ --blur: 0px; }
   }
-  .perf-lite body::before, .perf-lite body::after, .perf-lite #root::after{ display:none!important; }
-  .perf-lite .card{ backdrop-filter:none!important; }
-  .perf-lite .global-clock .digit{ animation:none!important; }
-  .perf-lite .global-clock .neon{ text-shadow:none!important; color:var(--text)!important; }
+  .perf-lite, .perf-lite-auto { --blur: 0px; }
+  .perf-lite body::before, .perf-lite body::after, .perf-lite #root::after,
+  .perf-lite-auto body::before, .perf-lite-auto body::after, .perf-lite-auto #root::after { display:none!important; }
+  .perf-lite .card, .perf-lite-auto .card { backdrop-filter:none!important; }
+  .perf-lite .global-clock .digit, .perf-lite-auto .global-clock .digit { animation:none!important; }
+  .perf-lite .global-clock .neon, .perf-lite-auto .global-clock .neon { text-shadow:none!important; color:var(--text)!important; }
 
-  /* UI בסיסי */
-  .container{ max-width:1200px; margin:0 auto; padding:24px; }
-  .card{ background:var(--surface-glass); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--shadow); backdrop-filter:saturate(140%) blur(6px); transition: transform .18s ease, box-shadow .18s ease, filter .18s ease; }
-  .card:hover{ transform:translateY(-2px); box-shadow:var(--shadow-lg); }
-  .h2{ margin:0; font-size:1.35rem; } .muted{ color:var(--text-muted); }
+  /* Pause כל האנימציות כשהטאב מוסתר */
+  .paused * { animation-play-state: paused !important; }
 
   /* אנימציות */
   @keyframes float-a{ 0%{transform:translate3d(0,0,0) rotate(0) scale(1);} 40%{transform:translate3d(1.8%,-1.2%,0) rotate(5deg) scale(1.02);} 100%{transform:translate3d(-1.8%,1.2%,0) rotate(-6deg) scale(1.015);} }

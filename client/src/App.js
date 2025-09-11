@@ -1,19 +1,21 @@
 // client/src/App.js
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
 import UIProvider from './components/UIProvider';
 import Navbar from './components/Navbar';
-import Dashboard from './pages/Dashboard';
-import Register from './pages/Register';
 import { api, handleApiError } from './api';
 import toast from 'react-hot-toast';
-import About from './pages/About';
-import AdminUsers from './pages/AdminUsers';
-import Kiosk from './pages/Kiosk';
-import Presence from './pages/Presence';
-import QRScan from './pages/QRScan';
 import ThemeToggle from './components/ThemeToggle';
-import GlobalClock from './components/GlobalClock'; // נשאר
+import GlobalClock from './components/GlobalClock';
+
+// ✅ Lazy routes – נטענים רק כשנכנסים אליהם
+const Dashboard   = lazy(() => import('./pages/Dashboard'));
+const Register    = lazy(() => import('./pages/Register'));
+const About       = lazy(() => import('./pages/About'));
+const AdminUsers  = lazy(() => import('./pages/AdminUsers'));
+const Kiosk       = lazy(() => import('./pages/Kiosk'));
+const Presence    = lazy(() => import('./pages/Presence'));
+const QRScan      = lazy(() => import('./pages/QRScan'));
 
 function Login({ setToken }) {
   const [email, setEmail] = useState('');
@@ -49,25 +51,9 @@ function Login({ setToken }) {
       <p className="muted">Please log in to continue.</p>
 
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
-        <input
-          type="email"
-          className="input"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          className="input"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <button className="btn" type="submit" disabled={busy}>
-          {busy ? 'Logging in…' : 'Login'}
-        </button>
+        <input type="email" className="input" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <input type="password" className="input" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <button className="btn" type="submit" disabled={busy}>{busy ? 'Logging in…' : 'Login'}</button>
       </form>
 
       <div style={{ marginTop: 12 }}>
@@ -102,23 +88,29 @@ export default function App() {
       <BrowserRouter>
         {authed && <Navbar onLogout={doLogout} />}
 
-        <Routes>
-          <Route path="/" element={authed ? <Dashboard /> : <Navigate to="/login" replace />} />
-          <Route path="/presence" element={authed ? <Presence /> : <Navigate to="/login" replace />} />
-          <Route path="/about" element={authed ? <About /> : <Navigate to="/login" replace />} />
-          <Route path="/admin/users" element={authed ? <AdminUsers /> : <Navigate to="/login" replace />} />
-          <Route path="/kiosk" element={authed ? <Kiosk /> : <Navigate to="/login" replace />} />
-          <Route path="/qr/auto" element={authed ? <QRScan /> : <Navigate to="/login" replace />} />
-          <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
-          <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {/* Suspense עוטף את הראוטים לטעינה הדרגתית */}
+        <Suspense
+          fallback={
+            <div className="container" style={{ marginTop: 80 }}>
+              <div className="card" style={{ padding: 16 }}>Loading…</div>
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/" element={authed ? <Dashboard /> : <Navigate to="/login" replace />} />
+            <Route path="/presence" element={authed ? <Presence /> : <Navigate to="/login" replace />} />
+            <Route path="/about" element={authed ? <About /> : <Navigate to="/login" replace />} />
+            <Route path="/admin/users" element={authed ? <AdminUsers /> : <Navigate to="/login" replace />} />
+            <Route path="/kiosk" element={authed ? <Kiosk /> : <Navigate to="/login" replace />} />
+            <Route path="/qr/auto" element={authed ? <QRScan /> : <Navigate to="/login" replace />} />
+            <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
+            <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
 
-        {/* ❌ בלי TimeBackground */}
-        {/* ✅ שעון גדול נשאר */}
+        {/* גלובלי לכל העמודים */}
         <GlobalClock />
-
-        {/* טוגל נושא */}
         <ThemeToggle />
       </BrowserRouter>
     </UIProvider>
