@@ -32,7 +32,35 @@ import App from './App';
   } catch {}
 })();
 
-/* ערכת נושא + אנימציות רקע + סטייל לשעון גדול */
+/* אתחול מצב ביצועים: 'perfMode' ב-localStorage: 'lite' כדי לכבות אפקטים כבדים */
+(function initPerfMode() {
+  try {
+    const KEY = 'perfMode';
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const saved = (localStorage.getItem(KEY) || '').toLowerCase();
+    const isLite = reduced || saved === 'lite';
+    document.documentElement.classList.toggle('perf-lite', isLite);
+
+    // האזן לשינויים בלשוניות אחרות
+    window.addEventListener('storage', (e) => {
+      if (e.key === KEY) {
+        const v = (e.newValue || '').toLowerCase();
+        document.documentElement.classList.toggle('perf-lite', v === 'lite');
+      }
+    });
+
+    // האזן לשינוי העדפת מערכת
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change', e => {
+        if (localStorage.getItem(KEY) !== 'lite') {
+          document.documentElement.classList.toggle('perf-lite', e.matches);
+        }
+      });
+    }
+  } catch {}
+})();
+
+/* ערכת נושא + אנימציות רקע + מצב ביצועים קל */
 (function injectTheme() {
   const css = `
   :root{
@@ -86,7 +114,7 @@ import App from './App';
   html, body, #root { height: 100%; background: transparent !important; color: var(--text); }
   #root { isolation: isolate; position: relative; }
 
-  /* שכבות הרקע שכבר יש */
+  /* שכבות רקע */
   #root::before{
     content:"";
     position: fixed; inset: 0; z-index: -3; pointer-events: none;
@@ -140,71 +168,81 @@ import App from './App';
     animation: grain var(--anim-speed-3) steps(10) infinite;
   }
 
-  /* ========= שכבת "שעון נוזל" ========= */
-  .time-liquid {
-    position: fixed;
-    left: 6%;
-    top: 22%;
-    width: 320px;
-    height: 320px;
-    z-index: -1;
-    opacity: .35;
-    filter: blur(0.2px);
-    pointer-events: none;
-  }
+  /* שכבת "שעון נוזל" (אם קיימת בקוד שלך) */
+  .time-liquid { position: fixed; left: 6%; top: 22%; width: 320px; height: 320px; z-index: -1; opacity: .35; filter: blur(0.2px); pointer-events: none; }
   .time-liquid svg { width: 100%; height: 100%; display: block; }
   .time-liquid .blob { animation: drip 7s ease-in-out infinite alternate; transform-origin: 50% 20%; }
   .time-liquid .hand { transform-origin: 50% 50%; animation: tick 60s linear infinite; opacity:.65; }
   @keyframes drip { 0% { transform: translateY(0) scale(1); } 100% { transform: translateY(8px) scale(1.03); } }
   @keyframes tick { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-  /* ========= שעון גדול צף ========= */
+  /* שעון גדול צף */
   .global-clock {
-    position: fixed;
-    right: 18px;
-    top: 68px; /* מתחת לNavbar */
-    z-index: 40;
+    position: fixed; right: 18px; top: 68px; z-index: 40;
     display: flex; align-items: center; gap: 12px;
-    padding: 10px 14px;
-    border-radius: 999px;
-    background: var(--surface-glass);
-    border: 1px solid var(--border);
-    backdrop-filter: saturate(140%) blur(8px);
-    box-shadow: var(--shadow);
+    padding: 10px 14px; border-radius: 999px;
+    background: var(--surface-glass); border: 1px solid var(--border);
+    backdrop-filter: saturate(140%) blur(8px); box-shadow: var(--shadow);
   }
   .global-clock .time { font-size: 22px; font-weight: 800; letter-spacing: .3px; }
   .global-clock .date { font-size: 12px; color: var(--text-muted); line-height: 1.15; }
-  .global-clock .dot {
-    width: 8px; height: 8px; border-radius: 50%;
+  .global-clock .dot { width: 8px; height: 8px; border-radius: 50%;
     background-image: radial-gradient(circle at 30% 30%, #a7f3d0, #22d3ee);
-    box-shadow: 0 0 0 2px rgba(34,211,238,.35);
-  }
+    box-shadow: 0 0 0 2px rgba(34,211,238,.35); }
 
-  /* ✨ Neon + Flip digits (הוספה חדשה) */
+  /* ✨ ניאון + Flip לספרות (אם הוספת את גרסת ה-Neon) */
   .global-clock .neon {
     color: #e0faff;
-    text-shadow:
-      0 0 4px #22d3ee,
-      0 0 8px #22d3ee,
-      0 0 12px #06b6d4;
+    text-shadow: 0 0 4px #22d3ee, 0 0 8px #22d3ee, 0 0 12px #06b6d4;
     font-family: 'Orbitron', ui-monospace, monospace;
   }
   .global-clock .digit {
-    display: inline-block;
-    min-width: 14px;
+    display: inline-block; min-width: 14px;
     animation: flip 0.6s ease forwards;
   }
   @keyframes flip {
-    0%   { transform: rotateX(0deg); opacity: .6; }
-    50%  { transform: rotateX(90deg); opacity: 0; }
+    0% { transform: rotateX(0deg); opacity: .6; }
+    50% { transform: rotateX(90deg); opacity: 0; }
     100% { transform: rotateX(0deg); opacity: 1; }
   }
 
-  @media (max-width: 720px){
+  /* ====== חיסכון ביצועים ====== */
+
+  /* א. אם משתמש העדיף Reduced Motion – כבה כמעט הכל */
+  @media (prefers-reduced-motion: reduce) {
+    #root::after, body::before, body::after { animation: none !important; }
+    .time-liquid, .theme-toggle { display: none !important; }
+    .global-clock .digit { animation: none !important; }
+    .card { backdrop-filter: none !important; }
+  }
+
+  /* ב. במובייל/מסכים צרים – להוריד עומס */
+  @media (max-width: 860px){
+    body::before, body::after { display: none; } /* beams + grain */
+    #root::after { animation: none; filter: blur(36px); } /* פחות blur */
     .global-clock { right: 10px; top: 66px; padding: 8px 10px; }
     .global-clock .time { font-size: 18px; }
     .time-liquid { display: none; }
   }
+
+  /* ג. מצב ביצועים קל (ניתן להדליק ידנית): localStorage.setItem('perfMode','lite') */
+  .perf-lite body::before,
+  .perf-lite body::after,
+  .perf-lite #root::after,
+  .perf-lite .time-liquid { display: none !important; }
+
+  .perf-lite .card { backdrop-filter: none !important; }
+  .perf-lite .global-clock .digit { animation: none !important; }
+  .perf-lite .global-clock.neon .time,
+  .perf-lite .global-clock .neon {
+    text-shadow: none !important; color: var(--text) !important;
+  }
+  .perf-lite * { transition: none !important; }
+
+  /* אנימציות כלליות קיימות */
+  @keyframes float-a { 0%{transform:translate3d(0,0,0) rotate(0) scale(1);} 40%{transform:translate3d(1.8%,-1.2%,0) rotate(5deg) scale(1.02);} 100%{transform:translate3d(-1.8%,1.2%,0) rotate(-6deg) scale(1.015);} }
+  @keyframes float-b { 0%{transform:translate3d(0,0,0) rotate(0) scale(1.05);} 100%{transform:translate3d(0,0,0) rotate(360deg) scale(1.05);} }
+  @keyframes grain   { 0%{transform:translate3d(0,0,0);} 100%{transform:translate3d(-10%,10%,0);} }
 
   /* UI בסיסי */
   .container{ max-width:1200px; margin:0 auto; padding:24px; }
@@ -216,7 +254,6 @@ import App from './App';
   .btn:active{ transform: translateY(0) scale(.99); }
   .btn:focus-visible{ outline: none; box-shadow: 0 0 0 3px var(--ring); }
 
-  /* גריד לדשבורד */
   .grid { display:grid; grid-template-columns:1fr; gap:16px; }
   @media (min-width: 860px){
     .grid { grid-template-columns: repeat(12, 1fr); }
@@ -225,7 +262,6 @@ import App from './App';
     .span-4  { grid-column: span 4; }
   }
 
-  /* טוגל נושא */
   .theme-toggle{ position: fixed; right: 18px; bottom: 18px; z-index: 50; display:inline-flex; align-items:center; justify-content:center; width:46px; height:46px; border-radius:999px; background: var(--toggle-bg); color: var(--toggle-fg); border:1px solid var(--border); box-shadow: var(--shadow); cursor:pointer; transition: transform .12s ease, box-shadow .12s ease, filter .12s ease; }
   .theme-toggle:hover{ transform: translateY(-1px); box-shadow: var(--shadow-lg); }
   .theme-toggle:active{ transform: translateY(0) scale(.98); }
