@@ -3,7 +3,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 
-/* מבטיח meta viewport למובייל (אם חסר ב-HTML) */
+/* Viewport למובייל (אם חסר) */
 (function ensureViewport() {
   if (!document.querySelector('meta[name="viewport"]')) {
     const m = document.createElement('meta');
@@ -13,29 +13,25 @@ import App from './App';
   }
 })();
 
-/* הזרקת ערכת נושא גלובלית — “Luxury Light” (רקע יוקרתי ובהיר + כפתורים חיים) */
+/* ערכת נושא + רקע יוקרתי כ"שכבה מאחור" (בלתי ניתן לדריסה) */
 (function injectTheme() {
   const css = `
   :root{
-    /* צבעי בסיס */
-    --bg: #f8fafc;         /* רקע בהיר */
-    --text: #0f172a;       /* טקסט ראשי */
-    --text-muted:#64748b;  /* טקסט משני */
+    --bg: #f8fafc;
+    --text: #0f172a;
+    --text-muted:#64748b;
     --border: rgba(2,6,23,.12);
 
-    /* מותג/דגשים */
-    --primary-1:#0ea5e9; /* cyan */
-    --primary-2:#6366f1; /* indigo */
-    --primary-3:#8b5cf6; /* violet */
-    --accent:#f59e0b;    /* זהב רך */
+    --primary-1:#0ea5e9;
+    --primary-2:#6366f1;
+    --primary-3:#8b5cf6;
+    --accent:#f59e0b;
 
-    /* משטחים */
     --surface:#ffffff;
     --surface-2:#f1f5f9;
     --surface-glass: rgba(255,255,255,.82);
     --navbar-bg: rgba(255,255,255,.88);
 
-    /* אפקטים/רדיאוס */
     --ring: rgba(99,102,241,.40);
     --shadow: 0 10px 24px rgba(2,6,23,.08);
     --shadow-lg: 0 18px 34px rgba(2,6,23,.12);
@@ -43,31 +39,33 @@ import App from './App';
     --radius-lg:16px;
   }
 
-  html,body,#root{height:100%}
-  #root{isolation:isolate}
+  /* מבטלים רקע קיים ומכניסים את הגרדיאנט כ־pseudo-element קבוע */
+  html, body, #root { height: 100%; background: transparent !important; }
+  #root { isolation: isolate; position: relative; }
 
-  /* רקע יוקרתי ובהיר לכל האתר */
-  body{
-    margin:0; color:var(--text);
-    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  /* הרקע בפועל – מאחורי הכל, גם כשיש גלילה */
+  #root::before{
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background:
-      radial-gradient(1100px 520px at -8% -12%, rgba(99,102,241,.10), transparent 60%),
-      radial-gradient(900px 520px at 106% -10%, rgba(14,165,233,.10), transparent 60%),
-      radial-gradient(900px 600px at 50% 118%, rgba(245,158,11,.08), transparent 60%),
+      radial-gradient(1100px 520px at -8% -12%, rgba(99,102,241,.12), transparent 60%),
+      radial-gradient(900px 520px at 106% -10%, rgba(14,165,233,.12), transparent 60%),
+      radial-gradient(900px 600px at 50% 118%, rgba(245,158,11,.10), transparent 60%),
       linear-gradient(180deg, #fbfcfe 0%, var(--bg) 100%);
+    background-attachment: fixed, fixed, fixed, fixed;
   }
 
-  /* קונטיינר גלובלי */
+  /* בסיס */
   .container{ max-width:1200px; margin:0 auto; padding:24px; }
-
-  /* כרטיסים – זכוכית עדינה */
   .card{
     background: var(--surface-glass);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow);
   }
-
   .h2{ margin:0; font-size:1.35rem; }
   .muted{ color: var(--text-muted); }
 
@@ -80,7 +78,7 @@ import App from './App';
   .link:hover{ background:#eef2ff; color:#0f172a; }
   .link.active{ background:#e0e7ff; color:#0f172a; box-shadow:0 0 0 2px rgba(99,102,241,.18) inset; }
 
-  /* כפתורים צבעוניים חיים */
+  /* כפתורים */
   .btn{
     appearance:none; border:0; cursor:pointer; user-select:none;
     border-radius: var(--radius);
@@ -92,7 +90,6 @@ import App from './App';
   .btn:hover{ transform: translateY(-1px); filter: saturate(1.08);
     box-shadow: 0 12px 26px rgba(99,102,241,.28), inset 0 0 0 1px rgba(255,255,255,.3);
   }
-  .btn:active{ transform: translateY(0); }
   .btn:focus-visible{ outline: none; box-shadow: 0 0 0 3px var(--ring); }
 
   .btn-ghost{
@@ -121,14 +118,14 @@ import App from './App';
   table.table th, table.table td{ padding:10px 12px; border-bottom:1px solid var(--border); }
   table.table thead th{ background:#eef2ff; color:#0f172a; text-align:left; }
 
-  /* נב־בר עם זיגוג עדין */
+  /* נב-בר */
   .navbar{
     background: var(--navbar-bg);
     backdrop-filter: saturate(140%) blur(8px);
     border-bottom: 1px solid var(--border);
   }
 
-  /* מובייל התאמות */
+  /* מובייל */
   @media (max-width: 480px){
     .container{ padding-left:12px; padding-right:12px; }
     .card{ padding:12px; }
