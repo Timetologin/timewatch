@@ -1,4 +1,4 @@
-// server/server.js
+// server.js (FULL, start-first + mongo retry, supports MONGODB_URI)
 require('dotenv').config();
 
 const path = require('path');
@@ -14,9 +14,13 @@ const app = express();
 
 /* ---------- Config ---------- */
 const PORT = Number(process.env.PORT || 4000);
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1/timewatch';
+// תומך גם ב-MONGODB_URI וגם ב-MONGO_URI, עם fallback ללוקאלי
+const MONGO_URI =
+  process.env.MONGODB_URI ||
+  process.env.MONGO_URI ||
+  'mongodb://127.0.0.1/timewatch';
 
-// מקבלים IP אמיתי מאחורי פרוקסי (Render/CF)
+// מאחורי פרוקסי (Render/CF)
 app.set('trust proxy', 1);
 
 /* ---------- CORS ---------- */
@@ -28,8 +32,7 @@ const ALLOWED_ORIGINS = (process.env.CLIENT_ORIGIN || '')
 
 app.use(cors({
   origin(origin, cb) {
-    // מאפשרים ללא Origin (Postman/Server-to-Server)
-    if (!origin) return cb(null, true);
+    if (!origin) return cb(null, true); // מאפשרים ללא Origin (Postman/Server-to-Server)
     if (
       ALLOWED_ORIGINS.length === 0 ||
       ALLOWED_ORIGINS.includes('*') ||
@@ -49,8 +52,11 @@ app.use(morgan('tiny'));
 app.use(express.json({ limit: '1mb' }));
 
 /* ---------- Health ---------- */
+let mongoReady = false;
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, ts: new Date().toISOString() });
+  // נשאיר 200 כדי ש-Render לא יכשיל deploy אם מונגו עדיין לא מחובר,
+  // אבל נחזיר שדה mongo כדי שתוכל לראות סטטוס.
+  res.status(200).json({ ok: true, mongo: mongoReady, ts: new Date().toISOString() });
 });
 
 /* ---------- Routes ---------- */
@@ -87,20 +93,46 @@ app.use('/api/locations', locationsRoutes);
   }
 })();
 
-/* ---------- Error handler ---------- */
-app.use((err, _req, res, _next) => {
-  console.error('Unhandled error:', err?.stack || err);
-  res.status(err.status || 500).json({ message: err.message || 'Server error' });
+/* ---------- DB: connect with retry (non-blocking server) ---------- */
+mongoose.set('strictQuery', false);
+
+mongoose.connection.on('connected', () => {
+  mongoReady = true;
+  console.log('✅ Mongo connected');
+});
+mongoose.connection.on('disconnected', () => {
+  mongoReady = false;
+  console.log('⚠️  Mongo disconnected');
+});
+mongoose.connection.on('error', (err) => {
+  mongoReady = false;
+  console.error('❌ Mongo error:', err?.message || err);
 });
 
-/* ---------- DB & Start ---------- */
-mongoose.set('strictQuery', false);
-mongoose.connect(MONGO_URI, { dbName: process.env.MONGO_DB || undefined })
-  .then(() => {
-    console.log('✅ Mongo connected');
-    app.listen(PORT, () => console.log(`🚀 API listening on :${PORT}`));
-  })
-  .catch((err) => {
-    console.error('❌ Mongo connect error:', err);
-    process.exit(1);
-  });
+async function connectWithRetry(attempt = 1) {
+  if (!MONGO_URI) {
+    console.error('❌ No Mongo URI provided (MONGODB_URI/MONGO_URI).');
+    return;
+  }
+  try {
+    await mongoose.connect(MONGO_URI, {
+      dbName: process.env.MONGO_DB || undefined,
+      maxPoolSize: 10,
+    });
+  } catch (err) {
+    const backoff = Math.min(30000, Math.floor(1000 * Math.pow(1.5, attempt)));
+    console.error(`🔁 Mongo connect attempt ${attempt} failed: ${err?.message || err}. Retrying in ${backoff}ms`);
+    setTimeout(() => connectWithRetry(attempt + 1), backoff);
+  }
+}
+
+/* ---------- Start server first ---------- */
+const server = app.listen(PORT, () => {
+  console.log(`🚀 API listening on :${PORT}`);
+  connectWithRetry().catch(() => {});
+});
+
+// Graceful shutdown (רשות)
+process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e));
+process.on('uncaughtException', (e) => console.error('uncaughtException:', e));
+process.on('SIGTERM', () => { console.log('SIGTERM'); server.close(() => process.exit(0)); });
