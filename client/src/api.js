@@ -1,6 +1,17 @@
 // client/src/api.js
 import axios from 'axios';
 
+/** מפה לדומיינים ידועים -> דומיין ה-API המקביל */
+function mapApiBaseFromHost(hostname) {
+  // פרודקשן: האתר ב-ravanahelmet.fun, ה-API ב-api.ravanahelmet.fun
+  const apex = 'ravanahelmet.fun';
+  if (hostname === apex || hostname === `www.${apex}`) {
+    return `https://api.${apex}/api`;
+  }
+  // אפשר להוסיף כאן מפות נוספות בעתיד אם צריך
+  return null;
+}
+
 /** Detect API base URL safely for dev/prod */
 function detectBaseURL() {
   try {
@@ -16,11 +27,15 @@ function detectBaseURL() {
       return 'http://localhost:4000/api';
     }
 
-    // Prod: prefer an explicit env var from the Static Site (Render)
+    // Prod: מפה ידועה קודם
+    const mapped = mapApiBaseFromHost(host);
+    if (mapped) return mapped;
+
+    // אם הוגדר במשתני סביבה של הקליינט – עדיפות לזה
     const envBase = process.env.REACT_APP_API_BASE;
     if (envBase) return envBase.replace(/\/$/, '');
 
-    // Fallback: assume same-origin proxy (/api -> backend via reverse-proxy)
+    // Fallback: assume same-origin proxy (/api)
     return `${window.location.origin.replace(/\/$/, '')}/api`;
   } catch {
     return '/api';
@@ -31,7 +46,7 @@ export const API_BASE = detectBaseURL();
 
 export const api = axios.create({
   baseURL: API_BASE,
-  timeout: 15000, // 15s - כדי לא “להיתקע” לנצח
+  timeout: 15000,
   withCredentials: false,
 });
 
@@ -47,7 +62,7 @@ api.interceptors.request.use((config) => {
 /** Tiny sleep helper */
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** On network error: prewarm + retry (handles Render cold starts / DNS hiccups) */
+/** On network error: prewarm + retry (handles cold starts) */
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
@@ -60,11 +75,11 @@ api.interceptors.response.use(
     if (!hasResponse && httpsPage && httpApi) {
       err.message =
         'Blocked by browser (Mixed Content): The page is HTTPS but API is HTTP.\n' +
-        'Set REACT_APP_API_BASE to an HTTPS URL of your API on Render.';
+        'Set REACT_APP_API_BASE to an HTTPS URL.';
       return Promise.reject(err);
     }
 
-    // Retry only when there is NO response (true network error), up to 2 times
+    // Retry only when there is NO response, up to 2 times
     if (!hasResponse && !cfg.__retried) {
       cfg.__retried = 1;
       try { await api.get('/health', { timeout: 8000 }).catch(() => {}); } catch {}
@@ -90,19 +105,11 @@ export function ping() {
 export function handleApiError(err) {
   if (!err) return 'Unknown error';
   if (err?.message && !err?.response) {
-    // pure network / mixed-content
-    return err.message.includes('Mixed Content')
-      ? 'Network blocked (HTTPS page vs HTTP API).'
-      : 'Network Error';
+    return err.message.includes('Mixed Content') ? 'Network blocked (HTTPS page vs HTTP API).' : 'Network Error';
   }
   const d = err.response?.data;
-  return (
-    d?.message ||
-    d?.error ||
-    err?.message ||
-    `HTTP ${err.response?.status || ''}`.trim()
-  );
+  return d?.message || d?.error || err?.message || `HTTP ${err.response?.status || ''}`.trim();
 }
 
-// Prewarm the API once on module load (helps with cold starts)
+// Prewarm once
 try { ping().catch(() => {}); } catch {}
