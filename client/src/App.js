@@ -8,14 +8,15 @@ import toast from 'react-hot-toast';
 import ThemeToggle from './components/ThemeToggle';
 import GlobalClock from './components/GlobalClock';
 
-// ✅ Lazy routes – נטענים רק כשנכנסים אליהם
-const Dashboard   = lazy(() => import('./pages/Dashboard'));
-const Register    = lazy(() => import('./pages/Register'));
-const About       = lazy(() => import('./pages/About'));
-const AdminUsers  = lazy(() => import('./pages/AdminUsers'));
-const Kiosk       = lazy(() => import('./pages/Kiosk'));
-const Presence    = lazy(() => import('./pages/Presence'));
-const QRScan      = lazy(() => import('./pages/QRScan'));
+// ✅ Lazy routes
+const Dashboard    = lazy(() => import('./pages/Dashboard'));
+const Register     = lazy(() => import('./pages/Register'));
+const About        = lazy(() => import('./pages/About'));
+const AdminUsers   = lazy(() => import('./pages/AdminUsers'));
+const AdminInvites = lazy(() => import('./pages/AdminInvites')); // נשאר
+const Kiosk        = lazy(() => import('./pages/Kiosk'));
+const Presence     = lazy(() => import('./pages/Presence'));
+const QRScan       = lazy(() => import('./pages/QRScan'));
 
 function Login({ setToken }) {
   const [email, setEmail] = useState('');
@@ -57,8 +58,9 @@ function Login({ setToken }) {
       </form>
 
       <div style={{ marginTop: 12 }}>
-        <span className="muted">New here? </span>
-        <Link to="/register">Create an account</Link>
+        {/* ⬇️ אין יותר "Create an account" חופשי. רק למי שיש הזמנה */}
+        <span className="muted">Have an invite? </span>
+        <Link to="/register">Register</Link>
       </div>
     </div>
   );
@@ -88,7 +90,6 @@ export default function App() {
       <BrowserRouter>
         {authed && <Navbar onLogout={doLogout} />}
 
-        {/* Suspense עוטף את הראוטים לטעינה הדרגתית */}
         <Suspense
           fallback={
             <div className="container" style={{ marginTop: 80 }}>
@@ -101,6 +102,7 @@ export default function App() {
             <Route path="/presence" element={authed ? <Presence /> : <Navigate to="/login" replace />} />
             <Route path="/about" element={authed ? <About /> : <Navigate to="/login" replace />} />
             <Route path="/admin/users" element={authed ? <AdminUsers /> : <Navigate to="/login" replace />} />
+            <Route path="/admin/invites" element={authed ? <AdminInvites /> : <Navigate to="/login" replace />} />
             <Route path="/kiosk" element={authed ? <Kiosk /> : <Navigate to="/login" replace />} />
             <Route path="/qr/auto" element={authed ? <QRScan /> : <Navigate to="/login" replace />} />
             <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />

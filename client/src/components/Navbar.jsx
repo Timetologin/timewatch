@@ -82,7 +82,7 @@ export default function Navbar({ rightSlot = null, onLogout }) {
     }
   };
 
-  const canManageUsers = !!me?.permissions?.usersManage;
+  const canManageUsers = !!me?.permissions?.usersManage || !!me?.permissions?.admin;
   const canSeePresence = !!(
     me?.permissions?.attendanceReadAll ||
     me?.permissions?.usersManage ||
@@ -118,7 +118,10 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         <Link className={`link${isActive('/about') ? ' active' : ''}`} to="/about">About</Link>
         <Link className={`link${isActive('/kiosk') ? ' active' : ''}`} to="/kiosk">Kiosk</Link>
         {canManageUsers && (
-          <Link className={`link${isActive('/admin') ? ' active' : ''}`} to="/admin/users">Users</Link>
+          <>
+            <Link className={`link${isActive('/admin/users') ? ' active' : ''}`} to="/admin/users">Users</Link>
+            <Link className={`link${isActive('/admin/invites') ? ' active' : ''}`} to="/admin/invites">Invites</Link> {/* ← NEW */}
+          </>
         )}
 
         {/* אימוג'י פרופיל */}
@@ -171,7 +174,10 @@ export default function Navbar({ rightSlot = null, onLogout }) {
           <Link className={`m-link${isActive('/about') ? ' active' : ''}`} to="/about" style={styles.mLink}>About</Link>
           <Link className={`m-link${isActive('/kiosk') ? ' active' : ''}`} to="/kiosk" style={styles.mLink}>Kiosk</Link>
           {canManageUsers && (
-            <Link className={`m-link${isActive('/admin') ? ' active' : ''}`} to="/admin/users" style={styles.mLink}>Users</Link>
+            <>
+              <Link className={`m-link${isActive('/admin/users') ? ' active' : ''}`} to="/admin/users" style={styles.mLink}>Users</Link>
+              <Link className={`m-link${isActive('/admin/invites') ? ' active' : ''}`} to="/admin/invites" style={styles.mLink}>Invites</Link> {/* ← NEW */}
+            </>
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
