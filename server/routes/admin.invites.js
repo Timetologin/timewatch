@@ -3,17 +3,25 @@ const express = require('express');
 const crypto = require('crypto');
 const Invite = require('../models/Invite');
 const { authenticate } = require('../middleware/authMiddleware');
-const { requirePermission } = require('../middleware/perm');
 
 const router = express.Router();
 
 /**
- * כל הראוטים כאן מוגנים:
- * - חייבים להיות מחוברים (authenticate)
- * - חייבים הרשאת usersManage או admin
+ * מידלוור מקומי: בדיקת הרשאה לאחד מהערכים שניתנים.
+ * זהה בהתנהגות למה שרצינו מ-requirePermission(['usersManage','admin'])
  */
+function requireAnyPermission(keys) {
+  return (req, res, next) => {
+    const p = (req.user && req.user.permissions) || {};
+    // אם אחד מה-keys קיים כ-true, מאשרים
+    if (keys.some((k) => !!p[k])) return next();
+    return res.status(403).json({ ok: false, error: 'Forbidden' });
+  };
+}
+
+// כל הראוטים כאן מוגנים ע"י התחברות + הרשאות ניהול משתמשים/אדמין
 router.use(authenticate);
-router.use(requirePermission(['usersManage', 'admin']));
+router.use(requireAnyPermission(['usersManage', 'admin']));
 
 /**
  * POST /api/admin/invites
@@ -23,7 +31,7 @@ router.use(requirePermission(['usersManage', 'admin']));
  *   role?: string,
  *   permissions?: { ... },
  *   maxUses?: number,
- *   daysValid?: number    // ברירת מחדל 7 ימים
+ *   daysValid?: number
  * }
  */
 router.post('/', async (req, res) => {
@@ -58,7 +66,7 @@ router.post('/', async (req, res) => {
       active: true,
     });
 
-    // בנה לינק שמיש ללקוח (תכניס את הדומיין שלך במקום CLIENT_ORIGIN הראשי)
+    // בנה לינק שימושי לקליינט
     const origins = (process.env.CLIENT_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
     const base = origins[0] || 'https://timetologin.space';
     const inviteUrl = `${base}/register?invite=${invite.token}`;
@@ -70,19 +78,13 @@ router.post('/', async (req, res) => {
   }
 });
 
-/**
- * GET /api/admin/invites
- * רשימת הזמנות (מצומצם)
- */
+/** GET /api/admin/invites – רשימה */
 router.get('/', async (_req, res) => {
   const list = await Invite.find().sort({ createdAt: -1 }).limit(200).lean();
   res.json({ ok: true, invites: list });
 });
 
-/**
- * POST /api/admin/invites/:token/disable
- * ביטול הזמנה
- */
+/** POST /api/admin/invites/:token/disable – ביטול הזמנה */
 router.post('/:token/disable', async (req, res) => {
   const { token } = req.params;
   const inv = await Invite.findOne({ token });
