@@ -28,7 +28,7 @@ function userDefaultPermissions() {
     reportExport: false,
     kioskAccess: false,
     attendanceBypassLocation: false,
-    admin: false,
+    admin: false, // ייגנור אם לא קיים בסכימה
   };
 }
 function isBcryptHash(str) {
@@ -59,10 +59,11 @@ router.post('/register', async (req, res) => {
     const existing = await User.findOne({ email: new RegExp(`^${escapeRegex(emailNorm)}$`, 'i') });
     if (existing) return res.status(409).json({ ok: false, error: 'Email already registered' });
 
+    // Hash כאן בסדר; במודל יש הגנה בפני double-hash
     const hash = await bcrypt.hash(password, 10);
     const user = await User.create({
       name: String(name).trim(),
-      email: emailNorm,       // תמיד נשמר lowercase קדימה
+      email: emailNorm,
       password: hash,
       role: inv.role || 'user',
       permissions: { ...userDefaultPermissions(), ...(inv.permissions || {}) },
@@ -82,19 +83,22 @@ router.post('/register', async (req, res) => {
 
 /**
  * POST /api/auth/login
- * - חיפוש משתמש case-insensitive
- * - מיגרציה אוטומטית לסיסמה אם נשמרה בעבר כטקסט
- * - נרמול מייל ל-lowercase בשמירה קדימה
+ * - חיפוש case-insensitive
+ * - הבאת password עם .select('+password')
+ * - מיגרציה מסיסמה טקסטואלית (אם הייתה) ל-bcrypt
+ * - נרמול מייל ל-lowercase לשמירה קדימה
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ ok: false, error: 'Missing credentials' });
 
-  const emailNorm = String(email).trim(); // לא מנרמלים פה ל-lower לפני החיפוש כי משתמשים ב-regex i
-  const user = await User.findOne({ email: new RegExp(`^${escapeRegex(emailNorm)}$`, 'i') });
+  const emailNorm = String(email).trim();
+  let query = User.findOne({ email: new RegExp(`^${escapeRegex(emailNorm)}$`, 'i') });
+  query = query.select('+password'); // ← חשוב! אחרת אין שדה password
+  const user = await query;
   if (!user) return res.status(401).json({ ok: false, error: 'Invalid email or password' });
 
-  // אם המייל נשמר בעבר באותיות גדולות – ננרמל אותו קדימה
+  // נרמול אימייל קדימה
   const normalized = String(email).toLowerCase().trim();
   if (user.email !== normalized) {
     try { user.email = normalized; await user.save(); } catch {}
@@ -108,7 +112,7 @@ router.post('/login', async (req, res) => {
     try { ok = await bcrypt.compare(password, stored); } catch { ok = false; }
   }
 
-  // אם נכשל וזו כנראה סיסמה ישנה בטקסט – נבדוק טקסטואלית, ואם תואם נעשה hash ונשמור
+  // אם נכשל וזו כנראה סיסמה ישנה בטקסט – בדיקה ומיגרציה ל-bcrypt
   if (!ok && stored && !isBcryptHash(stored)) {
     if (stored === password) {
       try {
