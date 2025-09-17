@@ -1,6 +1,6 @@
 // client/src/components/BypassBanner.jsx
 import React, { useEffect, useState } from 'react';
-import { api } from '../api';
+import api from '../api'; // ← default import (לא { api })
 
 export default function BypassBanner() {
   const [enabled, setEnabled] = useState(false);
@@ -9,13 +9,22 @@ export default function BypassBanner() {
     let alive = true;
     (async () => {
       try {
+        // /auth/me מחזיר את המשתמש עצמו (sanitizeUser)
         const { data } = await api.get('/auth/me');
-        if (alive) setEnabled(!!data?.permissions?.attendanceBypassLocation);
-      } catch (e) {
-        // שקט - אם נפל, פשוט לא נציג את הבאנר
+        const perms =
+          data?.permissions ||
+          data?.user?.permissions || // מקרה הגנתי אם השרת יחזיר עטיפה אחרת
+          {};
+        // המפתח הנכון הוא bypassLocation; נשאיר פולבק לישן ליתר ביטחון
+        const ok = !!(perms.bypassLocation ?? perms.attendanceBypassLocation);
+        if (alive) setEnabled(ok);
+      } catch {
+        // בשקט – אם אין הרשאה/401, פשוט לא מציגים את הבאנר
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   if (!enabled) return null;
@@ -29,7 +38,7 @@ export default function BypassBanner() {
         gap: 10,
         marginTop: 12,
         borderColor: '#10b981',
-        background: '#ecfdf5'
+        background: '#ecfdf5',
       }}
       title="This user can clock in/out even outside the office radius."
     >
