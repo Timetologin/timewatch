@@ -6,9 +6,8 @@ const User = require('../models/User');
 const router = express.Router();
 
 /**
- * הגנה: דרוש כותרת X-Admin-Reset בדיוק עם הטוקן שב-ENV:
- * ADMIN_RESET_TOKEN
- * ללא הטוקן – 403. זה יאפשר לך לאפס סיסמה גם אם אין לך כרגע JWT.
+ * הגנה: נדרש כותרת X-Admin-Reset עם הערך שנגדיר ב-ENV בשם ADMIN_RESET_TOKEN.
+ * אין צורך ב-JWT. אם אין טוקן או שהוא לא תואם — 403.
  */
 function guard(req, res, next) {
   const provided = req.header('X-Admin-Reset');
@@ -19,14 +18,15 @@ function guard(req, res, next) {
   next();
 }
 
-function escapeRegex(s='') {
+function escapeRegex(s = '') {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
  * POST /api/maintenance/reset-password
  * Headers: X-Admin-Reset: <ADMIN_RESET_TOKEN>
- * body: { email, newPassword }
+ * Body: { email, newPassword }
+ * פעולה: מאתר משתמש לפי אימייל (לא רגיש לאותיות), מצפין סיסמה חדשה ושומר.
  */
 router.post('/reset-password', guard, async (req, res) => {
   try {
@@ -34,7 +34,7 @@ router.post('/reset-password', guard, async (req, res) => {
     if (!email || !newPassword) {
       return res.status(400).json({ ok: false, error: 'Missing email or newPassword' });
     }
-    const user = await User.findOne({ email: new RegExp(`^${escapeRegex(email.trim())}$`, 'i') });
+    const user = await User.findOne({ email: new RegExp(`^${escapeRegex(String(email).trim())}$`, 'i') });
     if (!user) return res.status(404).json({ ok: false, error: 'User not found' });
 
     user.email = String(user.email).toLowerCase().trim(); // נרמול קדימה
@@ -49,7 +49,7 @@ router.post('/reset-password', guard, async (req, res) => {
 });
 
 /**
- * אופציונלי: לנרמל מיילים של כולם ל-lowercase (ללא שינוי סיסמאות)
+ * אופציונלי: לנרמל את כל המיילים ל-lowercase (בלי לגעת בסיסמאות).
  * POST /api/maintenance/normalize-emails
  * Headers: X-Admin-Reset: <ADMIN_RESET_TOKEN>
  */
