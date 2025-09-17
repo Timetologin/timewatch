@@ -10,6 +10,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const adminInvitesRoutes = require('./routes/admin.invites');
+const adminUsersMgmtRoutes = require('./routes/admin.users.mgmt'); // ← חדש
 
 const app = express();
 
@@ -81,6 +82,7 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/locations', locationsRoutes);
 app.use('/api/admin/invites', adminInvitesRoutes);
+app.use('/api/admin/users-mgmt', adminUsersMgmtRoutes); // ← חדש
 
 /* ---------- Serve client build if exists ---------- */
 (function serveClientIfExists() {

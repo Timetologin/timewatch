@@ -15,7 +15,6 @@ const JWT_EXPIRES = '30d';
 function signToken(user) {
   return jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
 }
-
 function sanitizeUser(u) {
   const user = u.toObject ? u.toObject() : u;
   delete user.password;
@@ -32,51 +31,41 @@ function userDefaultPermissions() {
     admin: false,
   };
 }
-// בדיקה אם מחרוזת נראית כמו hash של bcrypt
 function isBcryptHash(str) {
   return typeof str === 'string' && /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(str);
+}
+function escapeRegex(s='') {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**
  * POST /api/auth/register
- * הרשמה אך ורק עם inviteToken תקף
- * body: { name, email, password, inviteToken }
+ * Invite-only registration
  */
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password, inviteToken } = req.body || {};
-    if (!inviteToken) {
-      return res.status(400).json({ ok: false, error: 'Invite token is required' });
-    }
-    if (!name || !email || !password) {
-      return res.status(400).json({ ok: false, error: 'Missing required fields' });
-    }
+    if (!inviteToken) return res.status(400).json({ ok: false, error: 'Invite token is required' });
+    if (!name || !email || !password) return res.status(400).json({ ok: false, error: 'Missing required fields' });
 
     const inv = await Invite.findOne({ token: inviteToken });
-    if (!inv || !inv.isUsable()) {
-      return res.status(400).json({ ok: false, error: 'Invalid or expired invite' });
-    }
+    if (!inv || !inv.isUsable()) return res.status(400).json({ ok: false, error: 'Invalid or expired invite' });
 
     const emailNorm = String(email).toLowerCase().trim();
     if (inv.emailLock && inv.emailLock !== emailNorm) {
       return res.status(400).json({ ok: false, error: 'Invite is locked to a different email' });
     }
 
-    const existing = await User.findOne({ email: emailNorm });
-    if (existing) {
-      return res.status(409).json({ ok: false, error: 'Email already registered' });
-    }
+    const existing = await User.findOne({ email: new RegExp(`^${escapeRegex(emailNorm)}$`, 'i') });
+    if (existing) return res.status(409).json({ ok: false, error: 'Email already registered' });
 
     const hash = await bcrypt.hash(password, 10);
     const user = await User.create({
       name: String(name).trim(),
-      email: emailNorm,
+      email: emailNorm,       // תמיד נשמר lowercase קדימה
       password: hash,
       role: inv.role || 'user',
-      permissions: {
-        ...userDefaultPermissions(),
-        ...(inv.permissions || {}),
-      },
+      permissions: { ...userDefaultPermissions(), ...(inv.permissions || {}) },
     });
 
     inv.usedCount += 1;
@@ -93,39 +82,41 @@ router.post('/register', async (req, res) => {
 
 /**
  * POST /api/auth/login
- * body: { email, password }
- * תומך במיגרציה אוטומטית למשתמשים ותיקים עם סיסמה לא-מוצפנת:
- * אם bcrypt נכשל אבל הסיסמה ב־DB היא טקסט תואם → נבצע hash ונשמור מיד.
+ * - חיפוש משתמש case-insensitive
+ * - מיגרציה אוטומטית לסיסמה אם נשמרה בעבר כטקסט
+ * - נרמול מייל ל-lowercase בשמירה קדימה
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ ok: false, error: 'Missing credentials' });
 
-  const emailNorm = String(email).toLowerCase().trim();
-  const user = await User.findOne({ email: emailNorm });
+  const emailNorm = String(email).trim(); // לא מנרמלים פה ל-lower לפני החיפוש כי משתמשים ב-regex i
+  const user = await User.findOne({ email: new RegExp(`^${escapeRegex(emailNorm)}$`, 'i') });
   if (!user) return res.status(401).json({ ok: false, error: 'Invalid email or password' });
 
+  // אם המייל נשמר בעבר באותיות גדולות – ננרמל אותו קדימה
+  const normalized = String(email).toLowerCase().trim();
+  if (user.email !== normalized) {
+    try { user.email = normalized; await user.save(); } catch {}
+  }
+
   const stored = user.password || '';
-
-  // ניסיון רגיל עם bcrypt
   let ok = false;
-  try {
-    if (isBcryptHash(stored)) {
-      ok = await bcrypt.compare(password, stored);
-    } else {
-      ok = false;
-    }
-  } catch { ok = false; }
 
-  // אם נכשל וזו כנראה סיסמה ישנה לא מוצפנת — נבדוק שוויון טקסטואלי ואז נבצע hash ושמירה (מיגרציה)
+  // נסיון bcrypt אם זה hash
+  if (isBcryptHash(stored)) {
+    try { ok = await bcrypt.compare(password, stored); } catch { ok = false; }
+  }
+
+  // אם נכשל וזו כנראה סיסמה ישנה בטקסט – נבדוק טקסטואלית, ואם תואם נעשה hash ונשמור
   if (!ok && stored && !isBcryptHash(stored)) {
     if (stored === password) {
       try {
         const newHash = await bcrypt.hash(password, 10);
         user.password = newHash;
-        await user.save(); // מיגרציה בשקיפות
+        await user.save();
         ok = true;
-        console.log(`[auth] migrated plain password to bcrypt for user ${user.email}`);
+        console.log(`[auth] migrated plain password -> bcrypt for ${user.email}`);
       } catch (e) {
         console.error('Password migrate error:', e);
         ok = false;
@@ -139,25 +130,17 @@ router.post('/login', async (req, res) => {
   res.json({ ok: true, token, user: sanitizeUser(user) });
 });
 
-/**
- * GET /api/auth/me
- */
+/** GET /api/auth/me */
 router.get('/me', authenticate, async (req, res) => {
   const user = await User.findById(req.user._id);
   if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
   res.json(sanitizeUser(user));
 });
 
-/**
- * POST /api/auth/logout
- */
-router.post('/logout', (_req, res) => {
-  res.json({ ok: true });
-});
+/** POST /api/auth/logout */
+router.post('/logout', (_req, res) => res.json({ ok: true }));
 
-/**
- * GET /api/auth/invite/:token — בדיקת טוקן הזמנה (לצד הלקוח)
- */
+/** GET /api/auth/invite/:token — validate invite for client */
 router.get('/invite/:token', async (req, res) => {
   const inv = await Invite.findOne({ token: req.params.token }).lean();
   if (!inv || !new Invite(inv).isUsable()) {
