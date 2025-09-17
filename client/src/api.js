@@ -113,3 +113,6 @@ export function handleApiError(err) {
 
 // Prewarm once
 try { ping().catch(() => {}); } catch {}
+
+// ✅ הוספה בשביל קומפוננטים שמייבאים כברירת מחדל
+export default api;
