@@ -1,15 +1,16 @@
 // server/models/User.js
 const mongoose = require('mongoose');
-const bcrypt = require('bcrypt'); // ← שורה יחידה! לא bcryptjs וגם לא כפול
+const bcrypt = require('bcrypt'); // שורה יחידה
 
+// ── Permissions: השמות הנכונים לפי ה-UI
 const permissionsSchema = new mongoose.Schema(
   {
     usersManage:       { type: Boolean, default: false },
     attendanceReadAll: { type: Boolean, default: false },
     attendanceEdit:    { type: Boolean, default: false },
-    reportExport:      { type: Boolean, default: true  },
+    reportExport:      { type: Boolean, default: false },
     kioskAccess:       { type: Boolean, default: false },
-    attendanceBypassLocation: { type: Boolean, default: false },
+    bypassLocation:    { type: Boolean, default: false }, // ← שים לב לשם הנכון
   },
   { _id: false }
 );
@@ -18,21 +19,17 @@ const userSchema = new mongoose.Schema(
   {
     name:       { type: String, required: true, trim: true },
     email:      { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
-    // מוחזר רק עם .select('+password')
     password:   { type: String, required: true, minlength: 6, select: false },
     role:       { type: String, enum: ['user', 'admin'], default: 'user', index: true },
     department: { type: String, default: '' },
     active:     { type: Boolean, default: true },
-
-    // אימוג'י פרופיל
     profileEmoji: { type: String, default: '🙂' },
-
     permissions: { type: permissionsSchema, default: () => ({}) },
   },
   { timestamps: true }
 );
 
-// Hash once – אם הסיסמה כבר בפורמט bcrypt, לא נבצע האשה שוב
+// ── Hash once (גם אם תגיע סיסמה כבר-מוצפנת לא נעשה double-hash)
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   const pwd = String(this.password || '');
@@ -47,7 +44,7 @@ userSchema.pre('save', async function (next) {
   }
 });
 
-// Hash גם בעדכונים עם findOneAndUpdate אם שינו סיסמה
+// ── Hash גם בעדכונים עם findOneAndUpdate אם שינו סיסמה
 userSchema.pre('findOneAndUpdate', async function (next) {
   try {
     const update = this.getUpdate() || {};
@@ -68,7 +65,7 @@ userSchema.pre('findOneAndUpdate', async function (next) {
   }
 });
 
-// השוואת סיסמה בלוגין
+// ── compare בלוגין
 userSchema.methods.comparePassword = function (candidate) {
   return bcrypt.compare(String(candidate), String(this.password || ''));
 };

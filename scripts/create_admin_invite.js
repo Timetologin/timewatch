@@ -3,9 +3,15 @@
 //   node ./scripts/create_admin_invite.js            // ברירת מחדל: 7 ימים, שימוש 1
 //   node ./scripts/create_admin_invite.js 30 3       // 30 ימים, עד 3 שימושים
 
-require('dotenv').config();
 const path = require('path');
-const mongoose = require('mongoose');
+
+// טען dotenv ישירות מתוך server/node_modules + קרא את server/.env
+require(path.join(__dirname, '../server/node_modules/dotenv')).config({
+  path: path.join(__dirname, '../server/.env'),
+});
+
+// טען את mongoose מתוך server/node_modules
+const mongoose = require(path.join(__dirname, '../server/node_modules/mongoose'));
 const crypto = require('crypto');
 
 const DAYS_VALID = Number(process.argv[2] || 7);
@@ -14,13 +20,12 @@ const MAX_USES   = Number(process.argv[3] || 1);
 // DB שלך (אותו אחד של הפרוד/דב)
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/timewatch';
 
-// ה־URL של הפרונט שלך (כדי להדפיס לינק מוכן)
+// ה־URL של הפרונט (כדי להדפיס לינק מוכן)
 const CLIENT_URL = (process.env.CLIENT_URL ||
   (process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',')[0] : null) ||
   'http://localhost:5173').replace(/\/+$/, '');
 
 async function getInviteModel() {
-  // ננסה להיטען את המודל הקיים אם יש (server/models/Invite.js)
   try {
     const inviteModelPath = path.join(__dirname, '../server/models/Invite.js');
     const Invite = require(inviteModelPath);
@@ -43,7 +48,7 @@ async function getInviteModel() {
         maxUses: { type: Number, default: 1 },
         usedCount: { type: Number, default: 0 },
         expiresAt: { type: Date },
-        createdBy: { type: String, default: 'script' },
+        // createdBy: ObjectId (אם אצלך מוגדר כך – נטפל בזה בלוגיקה למטה)
         status: { type: String, default: 'active' }
       },
       { collection: 'invites', timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' } }
@@ -62,7 +67,8 @@ async function getInviteModel() {
     const token = crypto.randomBytes(24).toString('hex');
     const expiresAt = new Date(Date.now() + DAYS_VALID * 24 * 60 * 60 * 1000);
 
-    const doc = await Invite.create({
+    // ננסה קודם בלי createdBy בכלל
+    let payload = {
       token,
       role: 'admin',
       permissions: {
@@ -77,9 +83,23 @@ async function getInviteModel() {
       maxUses: MAX_USES,
       usedCount: 0,
       expiresAt,
-      createdBy: 'create_admin_invite_script',
       status: 'active'
-    });
+    };
+
+    let doc;
+    try {
+      doc = await Invite.create(payload);
+    } catch (e) {
+      // אם נכשל בגלל createdBy חובה/ObjectId – ננסה שוב עם ObjectId דמה
+      const msg = String(e && e.message || '');
+      const createdByErr = msg.includes('createdBy');
+      if (createdByErr) {
+        payload = { ...payload, createdBy: new mongoose.Types.ObjectId() };
+        doc = await Invite.create(payload);
+      } else {
+        throw e;
+      }
+    }
 
     const url = `${CLIENT_URL}/register?token=${token}`;
 
