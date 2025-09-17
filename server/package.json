@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "invite:admin": "node ../scripts/create_admin_invite.js"
+    "invite:admin": "node ../scripts/create_admin_invite.js",
+    "fix:admin": "node ../scripts/fix_admin_perms.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
