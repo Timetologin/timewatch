@@ -27,14 +27,14 @@ function userDefaultPermissions() {
     attendanceEdit: false,
     reportExport: false,
     kioskAccess: false,
-    attendanceBypassLocation: false,
-    admin: false, // ייגנור אם לא קיים בסכימה
+    bypassLocation: false, // ← תוקן! זה השם הנכון שה־UI בודק
+    admin: false
   };
 }
 function isBcryptHash(str) {
   return typeof str === 'string' && /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(str);
 }
-function escapeRegex(s='') {
+function escapeRegex(s = '') {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
@@ -83,10 +83,6 @@ router.post('/register', async (req, res) => {
 
 /**
  * POST /api/auth/login
- * - חיפוש case-insensitive
- * - הבאת password עם .select('+password')
- * - מיגרציה מסיסמה טקסטואלית (אם הייתה) ל-bcrypt
- * - נרמול מייל ל-lowercase לשמירה קדימה
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
@@ -94,11 +90,10 @@ router.post('/login', async (req, res) => {
 
   const emailNorm = String(email).trim();
   let query = User.findOne({ email: new RegExp(`^${escapeRegex(emailNorm)}$`, 'i') });
-  query = query.select('+password'); // ← חשוב! אחרת אין שדה password
+  query = query.select('+password'); 
   const user = await query;
   if (!user) return res.status(401).json({ ok: false, error: 'Invalid email or password' });
 
-  // נרמול אימייל קדימה
   const normalized = String(email).toLowerCase().trim();
   if (user.email !== normalized) {
     try { user.email = normalized; await user.save(); } catch {}
@@ -107,12 +102,10 @@ router.post('/login', async (req, res) => {
   const stored = user.password || '';
   let ok = false;
 
-  // נסיון bcrypt אם זה hash
   if (isBcryptHash(stored)) {
     try { ok = await bcrypt.compare(password, stored); } catch { ok = false; }
   }
 
-  // אם נכשל וזו כנראה סיסמה ישנה בטקסט – בדיקה ומיגרציה ל-bcrypt
   if (!ok && stored && !isBcryptHash(stored)) {
     if (stored === password) {
       try {
@@ -144,7 +137,7 @@ router.get('/me', authenticate, async (req, res) => {
 /** POST /api/auth/logout */
 router.post('/logout', (_req, res) => res.json({ ok: true }));
 
-/** GET /api/auth/invite/:token — validate invite for client */
+/** GET /api/auth/invite/:token */
 router.get('/invite/:token', async (req, res) => {
   const inv = await Invite.findOne({ token: req.params.token }).lean();
   if (!inv || !new Invite(inv).isUsable()) {
