@@ -16,6 +16,27 @@ function signToken(user) {
   return jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
 }
 
+function sanitizeUser(u) {
+  const user = u.toObject ? u.toObject() : u;
+  delete user.password;
+  return user;
+}
+function userDefaultPermissions() {
+  return {
+    usersManage: false,
+    attendanceReadAll: false,
+    attendanceEdit: false,
+    reportExport: false,
+    kioskAccess: false,
+    attendanceBypassLocation: false,
+    admin: false,
+  };
+}
+// בדיקה אם מחרוזת נראית כמו hash של bcrypt
+function isBcryptHash(str) {
+  return typeof str === 'string' && /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(str);
+}
+
 /**
  * POST /api/auth/register
  * הרשמה אך ורק עם inviteToken תקף
@@ -58,17 +79,12 @@ router.post('/register', async (req, res) => {
       },
     });
 
-    // עדכון הזמנה (שימוש)
     inv.usedCount += 1;
     if (inv.usedCount >= inv.maxUses) inv.active = false;
     await inv.save();
 
     const token = signToken(user);
-    res.status(201).json({
-      ok: true,
-      token,
-      user: sanitizeUser(user),
-    });
+    res.status(201).json({ ok: true, token, user: sanitizeUser(user) });
   } catch (err) {
     console.error('Register error:', err);
     res.status(500).json({ ok: false, error: 'Registration failed' });
@@ -78,15 +94,45 @@ router.post('/register', async (req, res) => {
 /**
  * POST /api/auth/login
  * body: { email, password }
+ * תומך במיגרציה אוטומטית למשתמשים ותיקים עם סיסמה לא-מוצפנת:
+ * אם bcrypt נכשל אבל הסיסמה ב־DB היא טקסט תואם → נבצע hash ונשמור מיד.
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ ok: false, error: 'Missing credentials' });
 
-  const user = await User.findOne({ email: String(email).toLowerCase().trim() });
+  const emailNorm = String(email).toLowerCase().trim();
+  const user = await User.findOne({ email: emailNorm });
   if (!user) return res.status(401).json({ ok: false, error: 'Invalid email or password' });
 
-  const ok = await bcrypt.compare(password, user.password || '');
+  const stored = user.password || '';
+
+  // ניסיון רגיל עם bcrypt
+  let ok = false;
+  try {
+    if (isBcryptHash(stored)) {
+      ok = await bcrypt.compare(password, stored);
+    } else {
+      ok = false;
+    }
+  } catch { ok = false; }
+
+  // אם נכשל וזו כנראה סיסמה ישנה לא מוצפנת — נבדוק שוויון טקסטואלי ואז נבצע hash ושמירה (מיגרציה)
+  if (!ok && stored && !isBcryptHash(stored)) {
+    if (stored === password) {
+      try {
+        const newHash = await bcrypt.hash(password, 10);
+        user.password = newHash;
+        await user.save(); // מיגרציה בשקיפות
+        ok = true;
+        console.log(`[auth] migrated plain password to bcrypt for user ${user.email}`);
+      } catch (e) {
+        console.error('Password migrate error:', e);
+        ok = false;
+      }
+    }
+  }
+
   if (!ok) return res.status(401).json({ ok: false, error: 'Invalid email or password' });
 
   const token = signToken(user);
@@ -106,13 +152,11 @@ router.get('/me', authenticate, async (req, res) => {
  * POST /api/auth/logout
  */
 router.post('/logout', (_req, res) => {
-  // בצד שרת אין מה לעשות (JWT). בצד לקוח תמחק את ה-token מה-LocalStorage.
   res.json({ ok: true });
 });
 
 /**
- * אופציונלי: בדיקת טוקן הזמנה לפני הצגת טופס בצד לקוח
- * GET /api/auth/invite/:token
+ * GET /api/auth/invite/:token — בדיקת טוקן הזמנה (לצד הלקוח)
  */
 router.get('/invite/:token', async (req, res) => {
   const inv = await Invite.findOne({ token: req.params.token }).lean();
@@ -131,23 +175,5 @@ router.get('/invite/:token', async (req, res) => {
     }
   });
 });
-
-// ---- helpers ----
-function sanitizeUser(u) {
-  const user = u.toObject ? u.toObject() : u;
-  delete user.password;
-  return user;
-}
-function userDefaultPermissions() {
-  return {
-    usersManage: false,
-    attendanceReadAll: false,
-    attendanceEdit: false,
-    reportExport: false,
-    kioskAccess: false,
-    attendanceBypassLocation: false,
-    admin: false,
-  };
-}
 
 module.exports = router;
