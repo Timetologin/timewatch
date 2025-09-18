@@ -1,10 +1,23 @@
 // client/src/components/BypassBanner.jsx
-import React from 'react';
-import { useAuth } from '../context/AuthContext';
+import React, { useEffect, useState } from 'react';
+import { api } from '../api';
 
 export default function BypassBanner() {
-  const { permissions } = useAuth();
-  const enabled = !!(permissions?.bypassLocation ?? permissions?.attendanceBypassLocation);
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get('/auth/me');
+        if (alive) setEnabled(!!data?.permissions?.attendanceBypassLocation);
+      } catch (e) {
+        // שקט - אם נפל, פשוט לא נציג את הבאנר
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   if (!enabled) return null;
 
   return (
@@ -16,7 +29,7 @@ export default function BypassBanner() {
         gap: 10,
         marginTop: 12,
         borderColor: '#10b981',
-        background: '#ecfdf5',
+        background: '#ecfdf5'
       }}
       title="This user can clock in/out even outside the office radius."
     >

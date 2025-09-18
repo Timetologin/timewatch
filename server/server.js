@@ -9,39 +9,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
-const adminInvitesRoutes = require('./routes/admin.invites');
-const adminUsersMgmtRoutes = require('./routes/admin.users.mgmt'); // ← חדש
-const maintenanceRoutes = require('./routes/maintenance'); // ← חדש
 
 const app = express();
-
-// ---- CORS HARDENED (must be before routes) ----
-const ALLOW_ORIGINS = (process.env.CLIENT_ORIGIN || process.env.CLIENT_URL || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
-
-// אם לא הוגדר ב-ENV, נאפשר את הדומיין הראשי כברירת מחדל
-if (ALLOW_ORIGINS.length === 0) {
-  ALLOW_ORIGINS.push('https://ravanahelmet.fun', 'http://localhost:5173');
-}
-
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && ALLOW_ORIGINS.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Vary', 'Origin');
-  }
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
-  }
-  next();
-});
-// ---- end CORS HARDENED ----
 
 /* ---------- Config ---------- */
 const PORT = Number(process.env.PORT || 4000);
@@ -110,9 +79,6 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/locations', locationsRoutes);
-app.use('/api/admin/invites', adminInvitesRoutes);
-app.use('/api/admin/users-mgmt', adminUsersMgmtRoutes); // ← חדש
-app.use('/api/maintenance', maintenanceRoutes); // ← חדש
 
 /* ---------- Serve client build if exists ---------- */
 (function serveClientIfExists() {

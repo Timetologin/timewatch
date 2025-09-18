@@ -1,16 +1,18 @@
 // client/src/api.js
 import axios from 'axios';
 
-/** מיפוי דומיין -> API בפרודקשן */
+/** מפה לדומיינים ידועים -> דומיין ה-API המקביל */
 function mapApiBaseFromHost(hostname) {
+  // פרודקשן: האתר ב-ravanahelmet.fun, ה-API ב-api.ravanahelmet.fun
   const apex = 'ravanahelmet.fun';
   if (hostname === apex || hostname === `www.${apex}`) {
     return `https://api.${apex}/api`;
   }
+  // אפשר להוסיף כאן מפות נוספות בעתיד אם צריך
   return null;
 }
 
-/** קובע baseURL לדב/פרוד בצורה בטוחה */
+/** Detect API base URL safely for dev/prod */
 function detectBaseURL() {
   try {
     const host = window.location.hostname || '';
@@ -20,17 +22,20 @@ function detectBaseURL() {
       host.startsWith('192.168.') ||
       host.endsWith('.local');
 
-    if (isLocal) return 'http://localhost:4000/api';
+    if (isLocal) {
+      // Dev: local API
+      return 'http://localhost:4000/api';
+    }
 
+    // Prod: מפה ידועה קודם
     const mapped = mapApiBaseFromHost(host);
     if (mapped) return mapped;
 
-    const envBase =
-      import.meta.env?.VITE_API_URL ||
-      process.env.REACT_APP_API_BASE ||
-      process.env.VITE_API_URL;
-    if (envBase) return String(envBase).replace(/\/$/, '');
+    // אם הוגדר במשתני סביבה של הקליינט – עדיפות לזה
+    const envBase = process.env.REACT_APP_API_BASE;
+    if (envBase) return envBase.replace(/\/$/, '');
 
+    // Fallback: assume same-origin proxy (/api)
     return `${window.location.origin.replace(/\/$/, '')}/api`;
   } catch {
     return '/api';
@@ -39,66 +44,72 @@ function detectBaseURL() {
 
 export const API_BASE = detectBaseURL();
 
-/** קורא טוקן מכל המקומות האפשריים כדי לשמור תאימות */
-export function getStoredToken() {
-  try {
-    return (
-      localStorage.getItem('token') ||
-      localStorage.getItem('authToken') ||
-      sessionStorage.getItem('token') ||
-      sessionStorage.getItem('authToken') ||
-      (document.cookie.match(/(?:^|;\s*)(token|jwt)=([^;]+)/i)?.[2] &&
-        decodeURIComponent(document.cookie.match(/(?:^|;\s*)(token|jwt)=([^;]+)/i)[2]))
-    );
-  } catch {
-    return null;
-  }
-}
-
-const api = axios.create({
+export const api = axios.create({
   baseURL: API_BASE,
   timeout: 15000,
   withCredentials: false,
 });
 
-/** מוסיף Authorization לכל בקשה אם יש טוקן */
+/** Attach Authorization token automatically */
 api.interceptors.request.use((config) => {
-  const t = getStoredToken();
-  if (t) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${t}`;
-  }
+  try {
+    const t = localStorage.getItem('token');
+    if (t) config.headers.Authorization = `Bearer ${t}`;
+  } catch {}
   return config;
 });
 
-/** עוזר לשגיאות – נשמר לתאימות עם קוד קיים שמייבא אותו */
-export function handleApiError(err) {
-  if (!err) return 'Unknown error';
-  // שגיאת רשת (אין response)
-  if (err?.message && !err?.response) {
-    // Mixed Content – דף https ו־API http
-    const httpsPage =
-      typeof window !== 'undefined' && window.location.protocol === 'https:';
-    const httpApi = /^http:\/\//i.test(API_BASE);
-    if (httpsPage && httpApi) {
-      return 'Network blocked (HTTPS page vs HTTP API).';
-    }
-    return 'Network Error';
-  }
-  // יש תגובה מהשרת
-  const d = err.response?.data;
-  return (
-    d?.message ||
-    d?.error ||
-    err?.message ||
-    `HTTP ${err.response?.status || ''}`.trim()
-  );
-}
+/** Tiny sleep helper */
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** פינג/בדיקת בריאות – לתאימות */
+/** On network error: prewarm + retry (handles cold starts) */
+api.interceptors.response.use(
+  (res) => res,
+  async (err) => {
+    const cfg = err?.config || {};
+    const hasResponse = !!err?.response;
+
+    // Mixed content guard: page https + api http
+    const httpsPage = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const httpApi = /^http:\/\//i.test(API_BASE);
+    if (!hasResponse && httpsPage && httpApi) {
+      err.message =
+        'Blocked by browser (Mixed Content): The page is HTTPS but API is HTTP.\n' +
+        'Set REACT_APP_API_BASE to an HTTPS URL.';
+      return Promise.reject(err);
+    }
+
+    // Retry only when there is NO response, up to 2 times
+    if (!hasResponse && !cfg.__retried) {
+      cfg.__retried = 1;
+      try { await api.get('/health', { timeout: 8000 }).catch(() => {}); } catch {}
+      await wait(800);
+      try { return await api.request(cfg); } catch (e1) {
+        cfg.__retried = 2;
+        await wait(1500);
+        try { return await api.request(cfg); } catch (e2) {
+          return Promise.reject(e2);
+        }
+      }
+    }
+    return Promise.reject(err);
+  }
+);
+
+/** Expose a small ping */
 export function ping() {
   return api.get('/health', { timeout: 8000 });
 }
 
-export default api;      // import api from './api'
-export { api };         // import { api } from './api'
+/** Error → readable message */
+export function handleApiError(err) {
+  if (!err) return 'Unknown error';
+  if (err?.message && !err?.response) {
+    return err.message.includes('Mixed Content') ? 'Network blocked (HTTPS page vs HTTP API).' : 'Network Error';
+  }
+  const d = err.response?.data;
+  return d?.message || d?.error || err?.message || `HTTP ${err.response?.status || ''}`.trim();
+}
+
+// Prewarm once
+try { ping().catch(() => {}); } catch {}
