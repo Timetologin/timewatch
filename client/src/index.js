@@ -1,9 +1,10 @@
 // client/src/index.js
-import './lib/fetchAuth';
+import './lib/fetchAuth'; // חשוב: מוסיף Authorization לכל fetch
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
 import App from './App';
-import './lib/fetchAuth';
 
 /* Viewport למובייל */
 (function ensureViewport() {
@@ -240,4 +241,12 @@ import './lib/fetchAuth';
 })();
 
 const root = createRoot(document.getElementById('root'));
-root.render(<App />);
+root.render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </BrowserRouter>
+  </React.StrictMode>
+);
