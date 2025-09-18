@@ -1,14 +1,23 @@
 // client/src/lib/fetchAuth.js
-// עוטף את window.fetch כדי להוסיף Authorization: Bearer <token> אוטומטית לכל בקשה
 (function patchFetchForAuth() {
   const origFetch = window.fetch;
+  function getToken() {
+    try {
+      return (
+        localStorage.getItem('token') ||
+        localStorage.getItem('authToken') ||
+        sessionStorage.getItem('token') ||
+        sessionStorage.getItem('authToken') ||
+        (document.cookie.match(/(?:^|;\s*)(token|jwt)=([^;]+)/i)?.[2] && decodeURIComponent(document.cookie.match(/(?:^|;\s*)(token|jwt)=([^;]+)/i)[2]))
+      );
+    } catch {
+      return null;
+    }
+  }
   window.fetch = async (input, init = {}) => {
     try {
-      const token =
-        localStorage.getItem('token') || localStorage.getItem('authToken');
-
+      const token = getToken();
       const reqInit = { ...init, headers: new Headers(init && init.headers || {}) };
-
       if (token && !reqInit.headers.has('Authorization')) {
         reqInit.headers.set('Authorization', `Bearer ${token}`);
       }
@@ -16,7 +25,7 @@
         reqInit.headers.set('Content-Type', 'application/json');
       }
       return origFetch(input, reqInit);
-    } catch (e) {
+    } catch {
       return origFetch(input, init);
     }
   };

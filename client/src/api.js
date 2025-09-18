@@ -3,12 +3,10 @@ import axios from 'axios';
 
 /** מפה לדומיינים ידועים -> דומיין ה-API המקביל */
 function mapApiBaseFromHost(hostname) {
-  // פרודקשן: האתר ב-ravanahelmet.fun, ה-API ב-api.ravanahelmet.fun
   const apex = 'ravanahelmet.fun';
   if (hostname === apex || hostname === `www.${apex}`) {
     return `https://api.${apex}/api`;
   }
-  // אפשר להוסיף כאן מפות נוספות בעתיד אם צריך
   return null;
 }
 
@@ -22,20 +20,17 @@ function detectBaseURL() {
       host.startsWith('192.168.') ||
       host.endsWith('.local');
 
-    if (isLocal) {
-      // Dev: local API
-      return 'http://localhost:4000/api';
-    }
+    if (isLocal) return 'http://localhost:4000/api';
 
-    // Prod: מפה ידועה קודם
     const mapped = mapApiBaseFromHost(host);
     if (mapped) return mapped;
 
-    // אם הוגדר במשתני סביבה של הקליינט – עדיפות לזה
-    const envBase = process.env.REACT_APP_API_BASE;
-    if (envBase) return envBase.replace(/\/$/, '');
+    const envBase =
+      import.meta.env?.VITE_API_URL ||
+      process.env.REACT_APP_API_BASE ||
+      process.env.VITE_API_URL;
+    if (envBase) return String(envBase).replace(/\/$/, '');
 
-    // Fallback: assume same-origin proxy (/api)
     return `${window.location.origin.replace(/\/$/, '')}/api`;
   } catch {
     return '/api';
@@ -44,7 +39,21 @@ function detectBaseURL() {
 
 export const API_BASE = detectBaseURL();
 
-export const api = axios.create({
+/** קריאת טוקן מכל מקום אפשרי */
+function getToken() {
+  try {
+    return (
+      localStorage.getItem('token') ||
+      localStorage.getItem('authToken') ||
+      sessionStorage.getItem('token') ||
+      sessionStorage.getItem('authToken')
+    );
+  } catch {
+    return null;
+  }
+}
+
+const api = axios.create({
   baseURL: API_BASE,
   timeout: 15000,
   withCredentials: false,
@@ -52,10 +61,11 @@ export const api = axios.create({
 
 /** Attach Authorization token automatically */
 api.interceptors.request.use((config) => {
-  try {
-    const t = localStorage.getItem('token');
-    if (t) config.headers.Authorization = `Bearer ${t}`;
-  } catch {}
+  const t = getToken();
+  if (t) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${t}`;
+  }
   return config;
 });
 
@@ -69,25 +79,30 @@ api.interceptors.response.use(
     const cfg = err?.config || {};
     const hasResponse = !!err?.response;
 
-    // Mixed content guard: page https + api http
-    const httpsPage = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const httpsPage =
+      typeof window !== 'undefined' && window.location.protocol === 'https:';
     const httpApi = /^http:\/\//i.test(API_BASE);
     if (!hasResponse && httpsPage && httpApi) {
       err.message =
         'Blocked by browser (Mixed Content): The page is HTTPS but API is HTTP.\n' +
-        'Set REACT_APP_API_BASE to an HTTPS URL.';
+        'Set REACT_APP_API_BASE/VITE_API_URL to an HTTPS URL.';
       return Promise.reject(err);
     }
 
-    // Retry only when there is NO response, up to 2 times
     if (!hasResponse && !cfg.__retried) {
       cfg.__retried = 1;
-      try { await api.get('/health', { timeout: 8000 }).catch(() => {}); } catch {}
+      try {
+        await api.get('/health', { timeout: 8000 }).catch(() => {});
+      } catch {}
       await wait(800);
-      try { return await api.request(cfg); } catch (e1) {
+      try {
+        return await api.request(cfg);
+      } catch (e1) {
         cfg.__retried = 2;
         await wait(1500);
-        try { return await api.request(cfg); } catch (e2) {
+        try {
+          return await api.request(cfg);
+        } catch (e2) {
           return Promise.reject(e2);
         }
       }
@@ -96,23 +111,31 @@ api.interceptors.response.use(
   }
 );
 
-/** Expose a small ping */
 export function ping() {
   return api.get('/health', { timeout: 8000 });
 }
 
-/** Error → readable message */
 export function handleApiError(err) {
   if (!err) return 'Unknown error';
   if (err?.message && !err?.response) {
-    return err.message.includes('Mixed Content') ? 'Network blocked (HTTPS page vs HTTP API).' : 'Network Error';
+    return err.message.includes('Mixed Content')
+      ? 'Network blocked (HTTPS page vs HTTP API).'
+      : 'Network Error';
   }
   const d = err.response?.data;
-  return d?.message || d?.error || err?.message || `HTTP ${err.response?.status || ''}`.trim();
+  return (
+    d?.message ||
+    d?.error ||
+    err?.message ||
+    `HTTP ${err.response?.status || ''}`.trim()
+  );
 }
 
 // Prewarm once
-try { ping().catch(() => {}); } catch {}
+try {
+  ping().catch(() => {});
+} catch {}
 
-// ✅ הוספה בשביל קומפוננטים שמייבאים כברירת מחדל
+// ✅ מאפשר גם import api וגם import { api }
 export default api;
+export { api };
