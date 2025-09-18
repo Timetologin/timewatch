@@ -1,6 +1,6 @@
 // client/src/pages/Login.js
 import React, { useState } from 'react';
-import { api } from '../api';
+import api from '../api'; // ← default import
 import { Link } from 'react-router-dom';
 
 export default function Login() {
@@ -9,7 +9,8 @@ export default function Login() {
   const [error, setError] = useState('');
   const [showPass, setShowPass] = useState(false);
 
-  const onChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const onChange = (e) =>
+    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -17,24 +18,22 @@ export default function Login() {
     setBusy(true);
     setError('');
     try {
-      const data = await api('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({
-          email: form.email.trim().toLowerCase(),
-          password: form.password
-        })
+      const { data } = await api.post('/auth/login', {
+        email: form.email.trim().toLowerCase(),
+        password: form.password,
       });
 
-      // שמירה בפורמט החדש
-      const auth = { token: data.token, user: data.user };
-      localStorage.setItem('auth', JSON.stringify(auth));
-      // ניקוי מפתחות ישנים
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      if (!data?.token) throw new Error('שרת לא החזיר טוקן');
+
+      // שמירה אחידה בכל המפתחות כדי שכל השכבות יזהו
+      localStorage.setItem('auth', JSON.stringify(data));
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('authToken', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
 
       window.location.replace('/');
     } catch (err) {
-      setError(err.message || 'שגיאה בהתחברות');
+      setError(err.response?.data?.error || err.message || 'שגיאה בהתחברות');
     } finally {
       setBusy(false);
     }
@@ -98,9 +97,10 @@ export default function Login() {
         </form>
 
         <div className="mt-4 text-sm text-right">
-          אין לך חשבון?
-          {' '}
-          <Link to="/register" className="text-blue-600 underline">הרשמה</Link>
+          אין לך חשבון?{' '}
+          <Link to="/register" className="text-blue-600 underline">
+            הרשמה
+          </Link>
         </div>
 
         <div className="mt-2 text-[11px] text-slate-400 text-right">
