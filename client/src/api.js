@@ -1,7 +1,7 @@
 // client/src/api.js
 import axios from 'axios';
 
-/** מפה לדומיינים ידועים -> דומיין ה-API המקביל */
+/** מיפוי דומיין -> API בפרודקשן */
 function mapApiBaseFromHost(hostname) {
   const apex = 'ravanahelmet.fun';
   if (hostname === apex || hostname === `www.${apex}`) {
@@ -10,7 +10,7 @@ function mapApiBaseFromHost(hostname) {
   return null;
 }
 
-/** Detect API base URL safely for dev/prod */
+/** קובע baseURL לדב/פרוד בצורה בטוחה */
 function detectBaseURL() {
   try {
     const host = window.location.hostname || '';
@@ -39,7 +39,7 @@ function detectBaseURL() {
 
 export const API_BASE = detectBaseURL();
 
-/** קריאת טוקן מכל מקום אפשרי */
+/** קורא טוקן מכל המקומות האפשריים כדי לשמור תאימות */
 export function getStoredToken() {
   try {
     return (
@@ -61,7 +61,7 @@ const api = axios.create({
   withCredentials: false,
 });
 
-/** שליחת Authorization לכל בקשה */
+/** מוסיף Authorization לכל בקשה אם יש טוקן */
 api.interceptors.request.use((config) => {
   const t = getStoredToken();
   if (t) {
@@ -71,5 +71,34 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-export default api;
-export { api };
+/** עוזר לשגיאות – נשמר לתאימות עם קוד קיים שמייבא אותו */
+export function handleApiError(err) {
+  if (!err) return 'Unknown error';
+  // שגיאת רשת (אין response)
+  if (err?.message && !err?.response) {
+    // Mixed Content – דף https ו־API http
+    const httpsPage =
+      typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const httpApi = /^http:\/\//i.test(API_BASE);
+    if (httpsPage && httpApi) {
+      return 'Network blocked (HTTPS page vs HTTP API).';
+    }
+    return 'Network Error';
+  }
+  // יש תגובה מהשרת
+  const d = err.response?.data;
+  return (
+    d?.message ||
+    d?.error ||
+    err?.message ||
+    `HTTP ${err.response?.status || ''}`.trim()
+  );
+}
+
+/** פינג/בדיקת בריאות – לתאימות */
+export function ping() {
+  return api.get('/health', { timeout: 8000 });
+}
+
+export default api;      // import api from './api'
+export { api };         // import { api } from './api'
