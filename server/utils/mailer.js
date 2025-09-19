@@ -1,5 +1,5 @@
 // server/utils/mailer.js
-const nodemailer = require('nodemailer');
+// גרסה חסינה: לא דורשת nodemailer ברמת הטופ-לבל, טוענת אותו רק כשצריך.
 
 function isMailConfigured() {
   const host = process.env.SMTP_HOST;
@@ -9,9 +9,14 @@ function isMailConfigured() {
   return Boolean(host && user && pass && from);
 }
 
-async function sendInviteEmail(to, inviteUrl, expiresAt) {
-  if (!isMailConfigured()) {
-    return { ok: false, skipped: true, reason: 'smtp_not_configured' };
+// מנסה לייצר transporter רק אם יש קונפיג וגם מותקן nodemailer
+function getTransporter() {
+  if (!isMailConfigured()) return { ok: false, reason: 'smtp_not_configured' };
+  let nodemailer;
+  try {
+    nodemailer = require('nodemailer'); // טעינה עצלה
+  } catch {
+    return { ok: false, reason: 'nodemailer_not_installed' };
   }
 
   const port = Number(process.env.SMTP_PORT || 587);
@@ -27,8 +32,19 @@ async function sendInviteEmail(to, inviteUrl, expiresAt) {
     },
   });
 
+  return { ok: true, transporter };
+}
+
+async function sendInviteEmail(to, inviteUrl, expiresAt) {
+  // אם אין קונפיג או שאין חבילה מותקנת – לא נכשלים, רק מדלגים
+  const t = getTransporter();
+  if (!t.ok) {
+    return { ok: false, skipped: true, reason: t.reason };
+  }
+
   const from = process.env.SMTP_FROM;
   const subject = process.env.INVITE_EMAIL_SUBJECT || 'Your Costoro TimeWatch invite';
+
   const bodyText =
 `Hi,
 
@@ -41,6 +57,7 @@ This link may expire on: ${expiresAt ? new Date(expiresAt).toLocaleString() : 'N
 
 Thanks,
 Costoro`;
+
   const bodyHtml =
 `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5">
   <p>Hi,</p>
@@ -51,7 +68,7 @@ Costoro`;
   <p>Thanks,<br/>Costoro</p>
 </div>`;
 
-  const info = await transporter.sendMail({
+  const info = await t.transporter.sendMail({
     from,
     to,
     subject,
