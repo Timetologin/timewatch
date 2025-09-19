@@ -9,7 +9,7 @@ function createInviteToken({ email = null, role = 'employee', expiresInDays = 7,
     t: 'invite',
     role,
     email,
-    ...payloadExtra
+    ...payloadExtra,
   };
 
   const token = jwt.sign(payload, secret, { expiresIn: expSec });
@@ -19,7 +19,7 @@ function createInviteToken({ email = null, role = 'employee', expiresInDays = 7,
 
 function verifyInviteToken(token) {
   const secret = process.env.INVITE_SECRET || 'dev-invite-secret';
-  return jwt.verify(token, secret); // יזרוק שגיאה אם לא תקין/פג תוקף
+  return jwt.verify(token, secret);
 }
 
 module.exports = { createInviteToken, verifyInviteToken };
