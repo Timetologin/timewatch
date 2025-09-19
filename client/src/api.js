@@ -6,7 +6,7 @@ import axios from 'axios';
  * - אם הוגדר REACT_APP_API_BASE → נשתמש בו.
  * - לוקאל: http://localhost:4000/api
  * - פרודקשן (ברירת מחדל): same-origin '/api' (אין CORS, אין תלות ב-subdomain)
- * - אופציונלי: אם REACT_APP_USE_API_SUBDOMAIN=1 → נשתמש ב-https://api.ravanahelmet.fun/api
+ * - אופציונלי: אם REACT_APP_USE_API_SUBDOMAIN=1 → נשתמש ב-https://api.<apex-domain>/api
  */
 function detectBaseURL() {
   try {
@@ -30,13 +30,32 @@ function detectBaseURL() {
     // 4) Optional subdomain (only if you explicitly want it)
     const useSub = String(process.env.REACT_APP_USE_API_SUBDOMAIN || '').trim() === '1';
     if (useSub) {
-      const apex = 'ravanahelmet.fun';
-      return `https://api.${apex}/api`;
+      return calcApiSubdomainBase() || sameOrigin;
     }
 
     return sameOrigin;
   } catch {
     return '/api';
+  }
+}
+
+/** גוזר את בסיס ה-API על תת-דומיין api.<apex>/api (למשל api.ravanahelmet.fun) */
+function calcApiSubdomainBase() {
+  try {
+    const host = window.location.hostname || '';
+    if (!host || host === 'localhost') return null;
+    if (host.startsWith('api.')) return null; // כבר על תת-דומיין API
+
+    // הורדת "www." אם קיים
+    const noWww = host.replace(/^www\./i, '');
+
+    // ניסיון סביר לחלץ apex (שתי התוויות האחרונות)
+    const parts = noWww.split('.');
+    const apex = parts.length >= 2 ? parts.slice(-2).join('.') : noWww;
+
+    return `https://api.${apex}/api`;
+  } catch {
+    return null;
   }
 }
 
@@ -65,21 +84,46 @@ api.interceptors.request.use((config) => {
 /** השהייה קטנה */
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Prewarm + retry עדין כשאין תגובה (שרת קר/רשת), לא כשיש סטטוס שגיאה */
+/** Prewarm + retry עדין כשאין תגובה (שרת קר/רשת), לא כשיש סטטוס שגיאה
+ *  + ✅ Fallback אוטומטי: אם קיבלנו 405 (או 404 לבקשה שאינה GET) → מעבר לתת-דומיין api.<apex>/api וניסיון חוזר פעם אחת.
+ */
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
     const cfg = err?.config || {};
     const hasResponse = !!err?.response;
+    const status = err?.response?.status;
+    const method = String(cfg?.method || '').toLowerCase();
 
     // Mixed content guard: page https + api http
     const httpsPage = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    const httpApi = /^http:\/\//i.test(API_BASE);
+    const httpApi = /^http:\/\//i.test(api.defaults.baseURL || '');
     if (!hasResponse && httpsPage && httpApi) {
       err.message =
         'Blocked by browser (Mixed Content): The page is HTTPS but API is HTTP.\n' +
         'Set REACT_APP_API_BASE to an HTTPS URL.';
       return Promise.reject(err);
+    }
+
+    // ✅ Fallback ל-subdomain אם קיבלנו 405, או 404 לבקשות שאינן GET (נפוץ כשדומיין הראשי מגיש סטטי)
+    if (
+      hasResponse &&
+      !cfg.__switchedToApiSub &&
+      (status === 405 || (status === 404 && method && method !== 'get'))
+    ) {
+      const alt = calcApiSubdomainBase();
+      if (alt && alt !== api.defaults.baseURL) {
+        try {
+          // החלפת הבסיס ונסיון חוזר חד-פעמי
+          api.defaults.baseURL = alt;
+          cfg.__switchedToApiSub = true;
+          // נוודא שה-axios לא נועל את baseURL הישן בתוך הבקשה
+          delete cfg.baseURL;
+          return await api.request(cfg);
+        } catch (e) {
+          return Promise.reject(e);
+        }
+      }
     }
 
     // נסיון חימום וברטראי עד פעמיים כשאין בכלל תגובה (רשת/שרת קר)
@@ -95,6 +139,7 @@ api.interceptors.response.use(
         }
       }
     }
+
     return Promise.reject(err);
   }
 );
@@ -109,7 +154,7 @@ export function handleApiError(err) {
   if (!err) return 'Unknown error';
   if (err?.message && !err?.response) {
     return err.message.includes('Mixed Content') ? 'Network blocked (HTTPS page vs HTTP API).' : 'Network Error';
-  }
+    }
   const d = err.response?.data;
   return d?.message || d?.error || err?.message || `HTTP ${err.response?.status || ''}`.trim();
 }
