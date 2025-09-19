@@ -1,20 +1,19 @@
 // client/src/api.js
 import axios from 'axios';
 
-/** מפה לדומיינים ידועים -> דומיין ה-API המקביל */
-function mapApiBaseFromHost(hostname) {
-  // פרודקשן: האתר ב-ravanahelmet.fun, ה-API ב-api.ravanahelmet.fun
-  const apex = 'ravanahelmet.fun';
-  if (hostname === apex || hostname === `www.${apex}`) {
-    return `https://api.${apex}/api`;
-  }
-  // אפשר להוסיף כאן מפות נוספות בעתיד אם צריך
-  return null;
-}
-
-/** Detect API base URL safely for dev/prod */
+/**
+ * מזהה Base URL בצורה בטוחה:
+ * - אם הוגדר REACT_APP_API_BASE → נשתמש בו.
+ * - לוקאל: http://localhost:4000/api
+ * - פרודקשן (ברירת מחדל): same-origin '/api' (אין CORS, אין תלות ב-subdomain)
+ * - אופציונלי: אם REACT_APP_USE_API_SUBDOMAIN=1 → נשתמש ב-https://api.ravanahelmet.fun/api
+ */
 function detectBaseURL() {
   try {
+    // 1) ENV override
+    const envBase = (process.env.REACT_APP_API_BASE || '').trim();
+    if (envBase) return envBase.replace(/\/$/, '');
+
     const host = window.location.hostname || '';
     const isLocal =
       host === 'localhost' ||
@@ -22,21 +21,20 @@ function detectBaseURL() {
       host.startsWith('192.168.') ||
       host.endsWith('.local');
 
-    if (isLocal) {
-      // Dev: local API
-      return 'http://localhost:4000/api';
+    // 2) Local dev
+    if (isLocal) return 'http://localhost:4000/api';
+
+    // 3) Production – prefer same-origin to avoid CORS/DNS mismatches
+    const sameOrigin = `${window.location.origin.replace(/\/$/, '')}/api`;
+
+    // 4) Optional subdomain (only if you explicitly want it)
+    const useSub = String(process.env.REACT_APP_USE_API_SUBDOMAIN || '').trim() === '1';
+    if (useSub) {
+      const apex = 'ravanahelmet.fun';
+      return `https://api.${apex}/api`;
     }
 
-    // Prod: מפה ידועה קודם
-    const mapped = mapApiBaseFromHost(host);
-    if (mapped) return mapped;
-
-    // אם הוגדר במשתני סביבה של הקליינט – עדיפות לזה
-    const envBase = process.env.REACT_APP_API_BASE;
-    if (envBase) return envBase.replace(/\/$/, '');
-
-    // Fallback: assume same-origin proxy (/api)
-    return `${window.location.origin.replace(/\/$/, '')}/api`;
+    return sameOrigin;
   } catch {
     return '/api';
   }
@@ -50,19 +48,24 @@ export const api = axios.create({
   withCredentials: false,
 });
 
-/** Attach Authorization token automatically */
+/** מוסיף Authorization רק כשיש טוקן */
 api.interceptors.request.use((config) => {
   try {
     const t = localStorage.getItem('token');
-    if (t) config.headers.Authorization = `Bearer ${t}`;
+    if (t) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Bearer ${t}`;
+    } else if (config.headers?.Authorization) {
+      delete config.headers.Authorization;
+    }
   } catch {}
   return config;
 });
 
-/** Tiny sleep helper */
+/** השהייה קטנה */
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** On network error: prewarm + retry (handles cold starts) */
+/** Prewarm + retry עדין כשאין תגובה (שרת קר/רשת), לא כשיש סטטוס שגיאה */
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
@@ -79,7 +82,7 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
-    // Retry only when there is NO response, up to 2 times
+    // נסיון חימום וברטראי עד פעמיים כשאין בכלל תגובה (רשת/שרת קר)
     if (!hasResponse && !cfg.__retried) {
       cfg.__retried = 1;
       try { await api.get('/health', { timeout: 8000 }).catch(() => {}); } catch {}
@@ -96,12 +99,12 @@ api.interceptors.response.use(
   }
 );
 
-/** Expose a small ping */
+/** Ping קטן */
 export function ping() {
   return api.get('/health', { timeout: 8000 });
 }
 
-/** Error → readable message */
+/** הודעת שגיאה ידידותית */
 export function handleApiError(err) {
   if (!err) return 'Unknown error';
   if (err?.message && !err?.response) {
