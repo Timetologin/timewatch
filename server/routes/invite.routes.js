@@ -2,24 +2,23 @@
 const express = require('express');
 const router = express.Router();
 
-//
-// ייבוא מאובטח של ה־auth middleware כדי לכסות כל וריאציה קיימת (authenticate/requireAuth/פונקציה ישירה)
-// לא משנה מה יש אצלך – נאתר את הפונקציה הנכונה בלי לשבור כלום.
-//
-const authMwModule = require('../middleware/authMiddleware'); // השם והתיקייה לפי מה שיש אצלך
+// אימות — תופס כל הווריאציות בלי לשבור קיים
+const authMwModule = require('../middleware/authMiddleware');
 const authenticate =
   (typeof authMwModule === 'function' && authMwModule) ||
   authMwModule.authenticate ||
-  authMwModule.requireAuth;
+  authMwModule.requireAuth ||
+  authMwModule.auth ||
+  authMwModule.default;
 
 if (typeof authenticate !== 'function') {
-  // נזרוק שגיאה ברורה אם אין פונקציית אימות – כדי לא לגרום ל-undefined ב-Route.post
-  throw new Error('Auth middleware function not found (authenticate/requireAuth). Check server/middleware/authMiddleware.js');
+  throw new Error('Auth middleware function not found (authenticate/requireAuth).');
 }
 
 const { createInviteToken } = require('../utils/invite');
+const { isMailConfigured, sendInviteEmail } = require('../utils/mailer');
 
-// הרשאה: אדמין מלא או usersManage (לא מחליף מודל הרשאות – רק משתמש בו)
+// הרשאה: אדמין מלא או usersManage
 function requireInvitePermission(req, res, next) {
   const u = req.userDoc || {};
   const isAdmin = u.role === 'admin' || u.isAdmin === true || u.permissions?.admin;
@@ -30,7 +29,6 @@ function requireInvitePermission(req, res, next) {
 
 // POST /api/invite/create
 // body: { role?: 'employee'|'manager'|'admin', expiresInDays?: number, email?: string }
-// החזרה: { ok, inviteUrl, token, expiresAt }
 router.post('/create', authenticate, requireInvitePermission, async (req, res) => {
   try {
     const { role = 'employee', expiresInDays, email } = req.body || {};
@@ -39,11 +37,33 @@ router.post('/create', authenticate, requireInvitePermission, async (req, res) =
     const baseUrl = process.env.CLIENT_PUBLIC_URL || 'https://ravanahelmet.fun';
     const inviteUrl = `${baseUrl.replace(/\/$/, '')}/register?invite=${encodeURIComponent(token)}`;
 
+    let emailSent = false;
+    let emailSkipped = false;
+    let emailError = null;
+
+    const mail = String(email || '').trim();
+    if (mail) {
+      try {
+        const r = await sendInviteEmail(mail, inviteUrl, expAt);
+        emailSent = !!r?.ok;
+        emailSkipped = !!r?.skipped;
+      } catch (e) {
+        emailError = e?.message || 'send failed';
+        // לא מפיל את הבקשה – רק מדווח
+        console.error('invite email error:', e);
+      }
+    }
+
     return res.json({
       ok: true,
       inviteUrl,
       token,
       expiresAt: new Date(expAt).toISOString(),
+      email: mail || null,
+      emailSent,
+      emailSkipped,
+      mailConfigured: isMailConfigured(),
+      emailError,
     });
   } catch (err) {
     console.error('invite create error:', err);

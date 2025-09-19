@@ -1,45 +1,31 @@
 // client/src/pages/CreateInvite.jsx
 import React, { useState } from 'react';
+import { api, handleApiError } from '../api';
 
 export default function CreateInvite() {
   const [role, setRole] = useState('employee');
   const [days, setDays] = useState(7);
   const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+  const [err, setErr] = useState('');
 
-  async function handleCreate(e) {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    setResult(null);
-
+  async function generate(e) {
+    e?.preventDefault?.();
+    setBusy(true);
+    setErr('');
+    setRes(null);
     try {
-      const res = await fetch('/api/invite/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // אם יש לך טוקן ב־localStorage/ctx – הוסף Authorization כאן:
-          // 'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        credentials: 'include', // אם אתם עובדים עם cookies/session
-        body: JSON.stringify({
-          role,
-          expiresInDays: Number(days) || 7,
-          email: email || undefined
-        })
+      const { data } = await api.post('/invite/create', {
+        role,
+        expiresInDays: Number(days) || 7,
+        email: email.trim() ? email.trim() : undefined,
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to create invite');
-      }
-      setResult(data);
-    } catch (err) {
-      setError(err.message || 'Error');
+      setRes(data);
+    } catch (e) {
+      setErr(handleApiError(e));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
@@ -47,17 +33,40 @@ export default function CreateInvite() {
     navigator.clipboard?.writeText(text);
   }
 
-  return (
-    <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Create Invite</h1>
-      <p className="text-slate-500 mb-6">Generate a signed invite link with an expiration.</p>
+  function mailtoHref() {
+    const to = (res?.email || email || '').trim();
+    const subject = 'Your Costoro TimeWatch invite';
+    const body = `Hi,
 
-      <form onSubmit={handleCreate} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+You have been invited to join Costoro • TimeWatch.
+
+Invite link:
+${res?.inviteUrl || ''}
+
+This link may expire on: ${res?.expiresAt ? new Date(res.expiresAt).toLocaleString() : 'N/A'}
+
+Thanks,
+Costoro`;
+    const qp = new URLSearchParams({
+      subject,
+      body
+    });
+    return `mailto:${encodeURIComponent(to)}?${qp.toString()}`;
+  }
+
+  return (
+    <div className="container" style={{ maxWidth: 860, marginTop: 32 }}>
+      <div className="card" style={{ padding: 20 }}>
+        <h1 className="h1" style={{ marginBottom: 4 }}>Create Invite</h1>
+        <p className="muted" style={{ marginBottom: 16 }}>
+          Generate a signed invite link with an expiration.
+        </p>
+
+        <form onSubmit={generate} className="grid" style={{ gap: 12, gridTemplateColumns: '1fr 1fr 1.5fr', alignItems: 'end' }}>
           <label className="block">
-            <span className="text-sm">Role</span>
+            <span className="muted">Role</span>
             <select
-              className="w-full mt-1 rounded-xl border border-slate-300 px-3 py-2"
+              className="input"
               value={role}
               onChange={(e) => setRole(e.target.value)}
             >
@@ -68,67 +77,87 @@ export default function CreateInvite() {
           </label>
 
           <label className="block">
-            <span className="text-sm">Expires (days)</span>
+            <span className="muted">Expires (days)</span>
             <input
               type="number"
               min="1"
-              className="w-full mt-1 rounded-xl border border-slate-300 px-3 py-2"
+              className="input"
               value={days}
               onChange={(e) => setDays(e.target.value)}
             />
           </label>
 
           <label className="block">
-            <span className="text-sm">Lock to Email (optional)</span>
+            <span className="muted">Lock to Email (optional)</span>
             <input
               type="email"
-              className="w-full mt-1 rounded-xl border border-slate-300 px-3 py-2"
-              placeholder="user@example.com"
+              className="input"
+              placeholder="user@example.com (optional)"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
-        </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-2xl px-4 py-2 bg-blue-600 text-white shadow disabled:opacity-50"
-        >
-          {loading ? 'Generating…' : 'Generate Invite'}
-        </button>
-      </form>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <button className="btn" type="submit" disabled={busy}>
+              {busy ? 'Generating…' : 'Generate Invite'}
+            </button>
+          </div>
+        </form>
 
-      {error && (
-        <div className="mt-4 text-red-600 font-medium">
-          {error}
-        </div>
-      )}
+        {err && (
+          <div className="card" style={{ marginTop: 12, padding: 12, border: '1px solid #fecaca', background: '#fff1f2', color: '#991b1b' }}>
+            {err}
+          </div>
+        )}
 
-      {result?.inviteUrl && (
-        <div className="mt-6 p-4 rounded-2xl border border-emerald-300 bg-emerald-50">
-          <div className="font-semibold mb-2">Invite Link</div>
-          <div className="flex flex-col gap-2">
-            <code className="break-all p-2 bg-white rounded border">{result.inviteUrl}</code>
-            <div className="text-sm text-slate-500">Expires at: {new Date(result.expiresAt).toLocaleString()}</div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => copy(result.inviteUrl)}
-                className="rounded-xl px-3 py-2 border"
+        {res?.inviteUrl && (
+          <div className="card" style={{ marginTop: 16, padding: 16, border: '1px solid #bbf7d0', background: '#f0fdf4' }}>
+            <div className="flex" style={{ alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div className="badge" style={{ background: '#10b981', color: '#fff', padding: '4px 10px', borderRadius: 999 }}>Invite ready</div>
+              <div className="muted">Expires: {res.expiresAt ? new Date(res.expiresAt).toLocaleString() : 'N/A'}</div>
+            </div>
+
+            <label className="block">
+              <span className="muted">Invite Link</span>
+              <input className="input" readOnly value={res.inviteUrl} />
+            </label>
+
+            <div className="flex" style={{ gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              <button className="btn" type="button" onClick={() => copy(res.inviteUrl)}>Copy Link</button>
+              <a className="btn-ghost" href={res.inviteUrl} target="_blank" rel="noreferrer">Open Link</a>
+              <button className="btn-ghost" type="button" onClick={() => copy(res.token)} title="Copy raw token">Copy Token</button>
+
+              {/* שליחה דרך תוכנת המייל המקומית (mailto) — לא דורש SMTP */}
+              <a
+                className="btn-ghost"
+                href={mailtoHref()}
+                onClick={(e) => {
+                  // אם אין כתובת מייל בכלל, נתריע ידידותית – אבל זה לא חובה
+                  const to = (res?.email || email || '').trim();
+                  if (!to) {
+                    e.preventDefault();
+                    alert('Tip: To send by email, fill the email field (optional) or copy the link and send manually.');
+                  }
+                }}
               >
-                Copy Link
-              </button>
-              <button
-                onClick={() => copy(result.token)}
-                className="rounded-xl px-3 py-2 border"
-                title="Copy raw token"
-              >
-                Copy Token
-              </button>
+                Send via Email
+              </a>
+
+              {/* אינדיקציה אם השרת ניסה לשלוח */}
+              {(res?.emailSent || res?.emailSkipped) && (
+                <span className="muted" style={{ marginLeft: 6 }}>
+                  {res.emailSent
+                    ? 'Email sent from server.'
+                    : res.emailSkipped
+                      ? 'Server email not configured – used local email client.'
+                      : null}
+                </span>
+              )}
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
