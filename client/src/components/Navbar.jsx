@@ -90,6 +90,9 @@ export default function Navbar({ rightSlot = null, onLogout }) {
     me?.permissions?.admin
   );
 
+  // ✅ תוספת: זיהוי אדמין (לא פוגע בכלום קיים)
+  const isAdmin = (me?.role === 'admin') || (me?.isAdmin === true) || !!me?.permissions?.admin;
+
   const isActive = (path) =>
     location.pathname === path || location.pathname.startsWith(path + '/');
 
@@ -119,6 +122,17 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         <Link className={`link${isActive('/kiosk') ? ' active' : ''}`} to="/kiosk">Kiosk</Link>
         {canManageUsers && (
           <Link className={`link${isActive('/admin') ? ' active' : ''}`} to="/admin/users">Users</Link>
+        )}
+
+        {/* ✅ תוספת: Create Invite (רק לאדמין או usersManage) */}
+        {(isAdmin || canManageUsers) && (
+          <Link
+            to="/invite"
+            className={`link${isActive('/invite') ? ' active' : ''}`}
+            title="Create invite link"
+          >
+            Create Invite
+          </Link>
         )}
 
         {/* אימוג'י פרופיל */}
@@ -172,6 +186,13 @@ export default function Navbar({ rightSlot = null, onLogout }) {
           <Link className={`m-link${isActive('/kiosk') ? ' active' : ''}`} to="/kiosk" style={styles.mLink}>Kiosk</Link>
           {canManageUsers && (
             <Link className={`m-link${isActive('/admin') ? ' active' : ''}`} to="/admin/users" style={styles.mLink}>Users</Link>
+          )}
+
+          {/* ✅ תוספת גם במובייל */}
+          {(isAdmin || canManageUsers) && (
+            <Link className={`m-link${isActive('/invite') ? ' active' : ''}`} to="/invite" style={styles.mLink}>
+              Create Invite
+            </Link>
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>

@@ -9,6 +9,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
+const inviteRoutes = require('./routes/invite.routes');
 
 const app = express();
 
@@ -79,6 +80,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/locations', locationsRoutes);
+app.use('/api/invite', inviteRoutes);
+
 
 /* ---------- Serve client build if exists ---------- */
 (function serveClientIfExists() {

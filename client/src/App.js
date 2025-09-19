@@ -7,6 +7,7 @@ import { api, handleApiError } from './api';
 import toast from 'react-hot-toast';
 import ThemeToggle from './components/ThemeToggle';
 import GlobalClock from './components/GlobalClock';
+import CreateInvite from './pages/CreateInvite';
 
 // ✅ Lazy routes – נטענים רק כשנכנסים אליהם
 const Dashboard   = lazy(() => import('./pages/Dashboard'));
@@ -105,6 +106,7 @@ export default function App() {
             <Route path="/qr/auto" element={authed ? <QRScan /> : <Navigate to="/login" replace />} />
             <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
             <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
+            <Route path="/invite" element={<CreateInvite />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
