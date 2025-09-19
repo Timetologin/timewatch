@@ -90,8 +90,10 @@ export default function Navbar({ rightSlot = null, onLogout }) {
     me?.permissions?.admin
   );
 
-  // ✅ תוספת: זיהוי אדמין (לא פוגע בכלום קיים)
+  // ✅ זיהוי אדמין
   const isAdmin = (me?.role === 'admin') || (me?.isAdmin === true) || !!me?.permissions?.admin;
+  // ✅ תוספת: ההרשאה החדשה
+  const canInvite = !!me?.permissions?.inviteCreate;
 
   const isActive = (path) =>
     location.pathname === path || location.pathname.startsWith(path + '/');
@@ -124,8 +126,8 @@ export default function Navbar({ rightSlot = null, onLogout }) {
           <Link className={`link${isActive('/admin') ? ' active' : ''}`} to="/admin/users">Users</Link>
         )}
 
-        {/* ✅ תוספת: Create Invite (רק לאדמין או usersManage) */}
-        {(isAdmin || canManageUsers) && (
+        {/* ✅ Create Invite: אדמין / מנהל משתמשים / הזמנה */}
+        {(isAdmin || canManageUsers || canInvite) && (
           <Link
             to="/invite"
             className={`link${isActive('/invite') ? ' active' : ''}`}
@@ -148,7 +150,7 @@ export default function Navbar({ rightSlot = null, onLogout }) {
           )}
         </div>
 
-        {/* Israel clock – נשאר עם גרדיאנט “יוקרתי” */}
+        {/* Israel clock */}
         <span className="il-clock" title={il.title} dir="ltr" aria-label="Israel time" style={styles.clock}>
           <span style={styles.flag}>🇮🇱</span>
           <span style={styles.digits}>{il.time}</span>
@@ -159,7 +161,7 @@ export default function Navbar({ rightSlot = null, onLogout }) {
         <button className="btn-ghost" onClick={handleLogout}>Logout</button>
       </nav>
 
-      {/* Burger for mobile — Menu + אייקון המבורגר */}
+      {/* Burger for mobile */}
       <button
         className="burger"
         aria-label="Menu"
@@ -188,8 +190,8 @@ export default function Navbar({ rightSlot = null, onLogout }) {
             <Link className={`m-link${isActive('/admin') ? ' active' : ''}`} to="/admin/users" style={styles.mLink}>Users</Link>
           )}
 
-          {/* ✅ תוספת גם במובייל */}
-          {(isAdmin || canManageUsers) && (
+          {/* ✅ Create Invite גם במובייל */}
+          {(isAdmin || canManageUsers || canInvite) && (
             <Link className={`m-link${isActive('/invite') ? ' active' : ''}`} to="/invite" style={styles.mLink}>
               Create Invite
             </Link>
@@ -225,7 +227,7 @@ export default function Navbar({ rightSlot = null, onLogout }) {
   );
 }
 
-/* ---- inline styles (מבוסס על משתני העיצוב החדשים) ---- */
+/* ---- styles ---- */
 const styles = {
   navbar: {
     padding: '12px 16px',

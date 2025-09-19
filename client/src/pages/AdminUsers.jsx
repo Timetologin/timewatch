@@ -12,6 +12,7 @@ const PERM_LIST = [
   ['reportExport', 'Report export'],
   ['kioskAccess', 'Kiosk access'],
   ['attendanceBypassLocation', 'Bypass location'],
+  ['inviteCreate', 'Invite create'], // ✅ תוספת חדשה
 ];
 
 export default function AdminUsers() {
@@ -35,6 +36,7 @@ export default function AdminUsers() {
       reportExport: true,
       kioskAccess: false,
       attendanceBypassLocation: false,
+      inviteCreate: false, // ✅ תוספת חדשה
     }
   });
 

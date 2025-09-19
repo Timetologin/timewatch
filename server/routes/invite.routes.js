@@ -18,12 +18,13 @@ if (typeof authenticate !== 'function') {
 const { createInviteToken } = require('../utils/invite');
 const { isMailConfigured, sendInviteEmail } = require('../utils/mailer');
 
-// הרשאה: אדמין מלא או usersManage
+// הרשאה: אדמין מלא או usersManage או inviteCreate (חדש)
 function requireInvitePermission(req, res, next) {
   const u = req.userDoc || {};
   const isAdmin = u.role === 'admin' || u.isAdmin === true || u.permissions?.admin;
   const canManageUsers = !!u.permissions?.usersManage;
-  if (isAdmin || canManageUsers) return next();
+  const canInvite = !!u.permissions?.inviteCreate; // ✅ תוספת חדשה
+  if (isAdmin || canManageUsers || canInvite) return next();
   return res.status(403).json({ error: 'Forbidden: missing permission' });
 }
 
