@@ -9,12 +9,7 @@ const clientDistPath = path.join(__dirname, "..", "client", "dist");
 // משרת את הקבצים מה־dist
 app.use(express.static(clientDistPath));
 
-// health check של Render
-app.get("/", (req, res) => {
-  res.send("OK");
-});
-
-// תופס את כל שאר הנתיבים
+// תופס את כל הנתיבים ומחזיר את index.html
 app.get("*", (req, res) => {
   res.sendFile(path.join(clientDistPath, "index.html"));
 });
