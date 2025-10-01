@@ -1,19 +1,24 @@
-const express = require('express');
-const path = require('path');
+const express = require("express");
+const path = require("path");
 const app = express();
-const port = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4000;
 
-// Serve static files from the client
-app.use(express.static(path.join(__dirname, 'client', 'dist')));
+// path לתיקיית dist שנמצאת מחוץ ל־server
+const clientDistPath = path.join(__dirname, "..", "client", "dist");
 
-// Health check
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
+// משרת את הקבצים מה־dist
+app.use(express.static(clientDistPath));
+
+// health check של Render
+app.get("/", (req, res) => {
+  res.send("OK");
 });
 
-// API routes (אם יש לך בעתיד)
+// תופס את כל שאר הנתיבים
+app.get("*", (req, res) => {
+  res.sendFile(path.join(clientDistPath, "index.html"));
+});
 
-// Start server
-app.listen(port, () => {
-  console.log(`Server is running at http://localhost:${port}`);
+app.listen(PORT, () => {
+  console.log(`✅ Server is running at http://localhost:${PORT}`);
 });
