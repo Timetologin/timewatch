@@ -1,0 +1,120 @@
+// client/src/App.js
+import React, { useEffect, useMemo, useState, useCallback, Suspense, lazy } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
+import UIProvider from './components/UIProvider';
+import Navbar from './components/Navbar';
+import { api, handleApiError } from './api';
+import toast from 'react-hot-toast';
+import ThemeToggle from './components/ThemeToggle';
+import GlobalClock from './components/GlobalClock';
+import CreateInvite from './pages/CreateInvite';
+
+// ✅ Lazy routes – נטענים רק כשנכנסים אליהם
+const Dashboard   = lazy(() => import('./pages/Dashboard'));
+const Register    = lazy(() => import('./pages/Register'));
+const About       = lazy(() => import('./pages/About'));
+const AdminUsers  = lazy(() => import('./pages/AdminUsers'));
+const Kiosk       = lazy(() => import('./pages/Kiosk'));
+const Presence    = lazy(() => import('./pages/Presence'));
+const QRScan      = lazy(() => import('./pages/QRScan'));
+
+function Login({ setToken }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const { data } = await api.post('/auth/login', { email, password });
+      if (data?.token) {
+        localStorage.setItem('token', data.token);
+        setToken(data.token);
+      }
+      toast.success('Welcome back!');
+      navigate('/', { replace: true });
+    } catch (err) {
+      toast.error(handleApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="container" style={{ maxWidth: 420, marginTop: 80 }}>
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <img src="/logo.png" alt="Costoro Logo" style={{ height: 80 }} />
+      </div>
+
+      <h2 className="h2">Login</h2>
+      <p className="muted">Please log in to continue.</p>
+
+      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
+        <input type="email" className="input" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <input type="password" className="input" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <button className="btn" type="submit" disabled={busy}>{busy ? 'Logging in…' : 'Login'}</button>
+      </form>
+
+      <div style={{ marginTop: 12 }}>
+        <span className="muted">New here? </span>
+        <Link to="/register">Create an account</Link>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [token, setToken] = useState(() => {
+    try { return localStorage.getItem('token'); } catch { return null; }
+  });
+
+  useEffect(() => {
+    const onStorage = (e) => { if (e.key === 'token') setToken(e.newValue); };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const authed = useMemo(() => !!token, [token]);
+
+  const doLogout = useCallback((navigate) => {
+    try { localStorage.removeItem('token'); } catch {}
+    setToken(null);
+    navigate('/login', { replace: true });
+  }, []);
+
+  return (
+    <UIProvider>
+      <BrowserRouter>
+        {authed && <Navbar onLogout={doLogout} />}
+
+        {/* Suspense עוטף את הראוטים לטעינה הדרגתית */}
+        <Suspense
+          fallback={
+            <div className="container" style={{ marginTop: 80 }}>
+              <div className="card" style={{ padding: 16 }}>Loading…</div>
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/" element={authed ? <Dashboard /> : <Navigate to="/login" replace />} />
+            <Route path="/presence" element={authed ? <Presence /> : <Navigate to="/login" replace />} />
+            <Route path="/about" element={authed ? <About /> : <Navigate to="/login" replace />} />
+            <Route path="/admin/users" element={authed ? <AdminUsers /> : <Navigate to="/login" replace />} />
+            <Route path="/kiosk" element={authed ? <Kiosk /> : <Navigate to="/login" replace />} />
+            <Route path="/qr/auto" element={authed ? <QRScan /> : <Navigate to="/login" replace />} />
+            <Route path="/login" element={authed ? <Navigate to="/" replace /> : <Login setToken={setToken} />} />
+            <Route path="/register" element={authed ? <Navigate to="/" replace /> : <Register />} />
+            <Route path="/invite" element={<CreateInvite />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+
+        {/* גלובלי לכל העמודים */}
+        <GlobalClock />
+        <ThemeToggle />
+      </BrowserRouter>
+    </UIProvider>
+  );
+}
